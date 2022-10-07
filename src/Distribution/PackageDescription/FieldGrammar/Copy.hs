@@ -3,6 +3,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+--
+-- This module is a partial copy of `Distribution.PackageDescription.FieldGrammar`.
+--
+-- It is needed because that module does not export CompatFilePath and
+-- CompatLicenseFile, which are needed to call packageDescriptionFieldGrammar
+--
 module Distribution.PackageDescription.FieldGrammar.Copy
   ( module Distribution.PackageDescription.FieldGrammar,
     packageDescriptionFieldGrammar,
