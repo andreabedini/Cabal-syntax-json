@@ -25,7 +25,7 @@ import Distribution.FieldGrammar
 import Distribution.Fields
 import Distribution.ModuleName hiding (fromString)
 import Distribution.PackageDescription
-import Distribution.PackageDescription.FieldGrammar.Copy
+import Distribution.PackageDescription.FieldGrammar
 import Distribution.Pretty
 import Distribution.System
 import Distribution.Types.Version
@@ -252,9 +252,7 @@ jsonSourceRepos v = map (jsonSourceRepo v)
 
 jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> Value
 jsonSourceRepo v repo =
-  object (jsonFieldGrammar v [] (sourceRepoFieldGrammar kind) repo)
-  where
-    kind = repoKind repo
+  object $ jsonFieldGrammar v [] (sourceRepoFieldGrammar (repoKind repo)) repo
 
 jsonSetupBInfo :: CabalSpecVersion -> Maybe SetupBuildInfo -> [Pair]
 jsonSetupBInfo _ Nothing = mempty
