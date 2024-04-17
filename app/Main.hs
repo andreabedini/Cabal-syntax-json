@@ -9,6 +9,6 @@ import System.Environment (getArgs)
 
 main :: IO ()
 main = do
-  fn : _ <- getArgs
-  gpd <- readGenericPackageDescription Verbosity.normal fn
-  TL.putStrLn $ encodeToLazyText $ jsonGenericPackageDescription gpd
+    fn : _ <- getArgs
+    gpd <- readGenericPackageDescription Verbosity.normal fn
+    TL.putStrLn $ encodeToLazyText $ jsonGenericPackageDescription gpd
