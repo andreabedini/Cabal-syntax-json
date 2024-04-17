@@ -121,8 +121,8 @@ deriving via (ViaPretty OS) instance ToJSON OS
 
 instance ToJSON ConfVar where
   toJSON (OS os) = object ["os" .= os]
-  toJSON (Arch arch) = object ["arcg" .= arch]
-  toJSON (PackageFlag flag) = object ["os" .= flag]
+  toJSON (Arch arch) = object ["arch" .= arch]
+  toJSON (PackageFlag flag) = object ["flag" .= flag]
   toJSON (Impl compiler version) = object ["compiler" .= compiler, "version" .= version]
 
 instance ToJSON c => ToJSON (Condition c) where
