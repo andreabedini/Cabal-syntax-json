@@ -115,6 +115,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
 jsonField :: [Condition ConfVar] -> FieldName -> Json -> [Pair]
 jsonField _cs _fn (JsonArray []) = mempty
 jsonField _cs _fn (JsonObject []) = mempty
+jsonField _cs _fn (JsonString []) = mempty
 jsonField [] fn v = [fromUTF8BS fn .= v]
 jsonField cs fn v = [fromUTF8BS fn .= v']
   where
@@ -140,10 +141,11 @@ jsonGenericPackageDescription gpd =
 jsonPackageDescription :: CabalSpecVersion -> PackageDescription -> [Pair]
 jsonPackageDescription v pd =
   jsonFieldGrammar v [] packageDescriptionFieldGrammar pd
-    ++ ["source-repos" .= JsonObject (jsonSourceRepos v (sourceRepos pd))]
+    <> jsonSourceRepos v (sourceRepos pd)
 
 jsonSourceRepos :: CabalSpecVersion -> [SourceRepo] -> [Pair]
-jsonSourceRepos v = foldMap (jsonSourceRepo v)
+jsonSourceRepos v srs =
+  ["source-repos" .= JsonObject (foldMap (jsonSourceRepo v) srs) | not (null srs)]
 
 jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> [Pair]
 jsonSourceRepo v repo =
@@ -174,7 +176,7 @@ jsonCondLibrary v (Just condTree) = ["library" .= mainlibJson]
     mainlibJson = jsonCondTree2 v (libraryFieldGrammar LMainLibName) condTree
 
 jsonCondSubLibraries :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] Library)] -> [Pair]
-jsonCondSubLibraries v libs = ["sub-libraries" .= sublibsJson]
+jsonCondSubLibraries v libs = ["sub-libraries" .= sublibsJson | not (null libs)]
   where
     sublibsJson =
       JsonObject
