@@ -27,13 +27,12 @@ import ToJSON
 
 main :: IO ()
 main = do
-  fn : _ <- getArgs
-  dofile fn
-
-dofile :: FilePath -> IO ()
-dofile fn = do
-  gpd <- readGenericPackageDescription normal fn
-  BL.putStr $ renderJson $ jsonGenericPackageDescription gpd
+  fn_in : mb_fn_out <- getArgs
+  gpd <- readGenericPackageDescription normal fn_in
+  let bs = renderJson $ jsonGenericPackageDescription gpd
+  case mb_fn_out of
+    [] -> BL.putStr bs
+    fn_out : _ -> BL.writeFile fn_out bs
 
 newtype JSONFieldGrammar s a = JsonFG
   { fieldGrammarJSON :: CabalSpecVersion -> [Condition ConfVar] -> s -> [Pair]
@@ -166,7 +165,7 @@ jsonGenPackageFlags v flags = ["flags" .= flags' | not (null flags)]
     flags' =
       JsonObject
         [ unFlagName name .= JsonObject (jsonFieldGrammar v [] (flagFieldGrammar name) flag)
-          | flag@(MkPackageFlag name _ _ _) <- flags
+        | flag@(MkPackageFlag name _ _ _) <- flags
         ]
 
 jsonCondLibrary :: CabalSpecVersion -> Maybe (CondTree ConfVar [Dependency] Library) -> [Pair]
@@ -181,7 +180,7 @@ jsonCondSubLibraries v libs = ["sub-libraries" .= sublibsJson | not (null libs)]
     sublibsJson =
       JsonObject
         [ unUnqualComponentName n .= jsonCondTree2 v (libraryFieldGrammar $ LSubLibName n) condTree
-          | (n, condTree) <- libs
+        | (n, condTree) <- libs
         ]
 
 jsonCondForeignLibs :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] ForeignLib)] -> [Pair]
@@ -198,7 +197,7 @@ jsonCondExecutables v exes = ["executables" .= exesJson | not (null exes)]
     exesJson =
       JsonObject
         [ unUnqualComponentName n .= jsonCondTree2 v (executableFieldGrammar n) condTree
-          | (n, condTree) <- exes
+        | (n, condTree) <- exes
         ]
 
 jsonCondTestSuites :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] TestSuite)] -> [Pair]
@@ -207,7 +206,7 @@ jsonCondTestSuites v suites = ["test-suites" .= suitesJson | not (null suites)]
     suitesJson =
       JsonObject
         [ unUnqualComponentName n .= jsonCondTree2 v testSuiteFieldGrammar (fmap unvalidateTestSuite condTree)
-          | (n, condTree) <- suites
+        | (n, condTree) <- suites
         ]
 
 jsonCondBenchmarks :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] Benchmark)] -> [Pair]
@@ -216,7 +215,7 @@ jsonCondBenchmarks v suites = ["benchmarks" .= suitesJson | not (null suites)]
     suitesJson =
       JsonObject
         [ unUnqualComponentName n .= jsonCondTree2 v benchmarkFieldGrammar (fmap unvalidateBenchmark condTree)
-          | (n, condTree) <- suites
+        | (n, condTree) <- suites
         ]
 
 jsonCondTree2 :: CabalSpecVersion -> JSONFieldGrammar' s -> CondTree ConfVar [Dependency] s -> Json
