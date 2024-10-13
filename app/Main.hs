@@ -4,7 +4,6 @@
 module Main (main) where
 
 import Data.ByteString.Lazy qualified as BL
-import Data.List (foldl1')
 import Distribution.CabalSpecVersion
 import Distribution.Compat.Lens hiding ((.=))
 import Distribution.Compat.Newtype
@@ -30,65 +29,65 @@ main = do
     fn_out : _ -> BL.writeFile fn_out bs
 
 newtype JSONFieldGrammar s a = JsonFG
-  { fieldGrammarJSON :: CabalSpecVersion -> [Condition ConfVar] -> s -> [Pair]
+  { fieldGrammarJSON :: CabalSpecVersion -> s -> [Pair]
   }
   deriving (Functor)
 
 type JSONFieldGrammar' s = JSONFieldGrammar s s
 
-jsonFieldGrammar :: CabalSpecVersion -> [Condition ConfVar] -> JSONFieldGrammar s a -> s -> [Pair]
-jsonFieldGrammar v cs fg = fieldGrammarJSON fg v cs
+jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> [Pair]
+jsonFieldGrammar v fg = fieldGrammarJSON fg v
 
 instance Applicative (JSONFieldGrammar s) where
-  pure _ = JsonFG (\_ _ _ -> mempty)
-  JsonFG f <*> JsonFG x = JsonFG (\v cs s -> f v cs s <> x v cs s)
+  pure _ = JsonFG (\_ _ -> mempty)
+  JsonFG f <*> JsonFG x = JsonFG (\v s -> f v s <> x v s)
 
 instance FieldGrammar ToJSON JSONFieldGrammar where
   blurFieldGrammar :: ALens' a b -> JSONFieldGrammar b d -> JSONFieldGrammar a d
-  blurFieldGrammar f (JsonFG fg) = JsonFG $ \v cs ->
-    fg v cs . aview f
+  blurFieldGrammar f (JsonFG fg) = JsonFG $ \v ->
+    fg v . aview f
 
   uniqueFieldAla :: (ToJSON b, Newtype a b) => FieldName -> (a -> b) -> ALens' s a -> JSONFieldGrammar s a
-  uniqueFieldAla fn _pack l = JsonFG $ \_v cs ->
-    jsonField cs fn . toJSON . pack' _pack . aview l
+  uniqueFieldAla fn _pack l = JsonFG $ \_v ->
+    jsonField fn . toJSON . pack' _pack . aview l
 
   booleanFieldDef :: FieldName -> ALens' s Bool -> Bool -> JSONFieldGrammar s Bool
-  booleanFieldDef fn l def = JsonFG $ \_v cs s ->
+  booleanFieldDef fn l def = JsonFG $ \_v s ->
     let b = aview l s
      in if b == def
           then mempty
-          else jsonField cs fn (toJSON b)
+          else jsonField fn (toJSON b)
 
   optionalFieldAla :: (ToJSON b, Newtype a b) => FieldName -> (a -> b) -> ALens' s (Maybe a) -> JSONFieldGrammar s (Maybe a)
-  optionalFieldAla fn _pack l = JsonFG $ \_ cs s ->
+  optionalFieldAla fn _pack l = JsonFG $ \_ s ->
     case aview l s of
       Nothing -> mempty
-      Just a -> jsonField cs fn (toJSON (pack' _pack a))
+      Just a -> jsonField fn (toJSON (pack' _pack a))
 
   optionalFieldDefAla :: (ToJSON b, Newtype a b, Eq a) => FieldName -> (a -> b) -> ALens' s a -> a -> JSONFieldGrammar s a
-  optionalFieldDefAla fn _pack l def = JsonFG $ \_ cs s ->
+  optionalFieldDefAla fn _pack l def = JsonFG $ \_ s ->
     let x = aview l s
      in if x == def
           then mempty
-          else jsonField cs fn (toJSON (pack' _pack x))
+          else jsonField fn (toJSON (pack' _pack x))
 
   freeTextField :: FieldName -> ALens' s (Maybe String) -> JSONFieldGrammar s (Maybe String)
-  freeTextField fn l = JsonFG $ \_v cs s ->
-    maybe mempty (jsonField cs fn . toJSON) (aview l s)
+  freeTextField fn l = JsonFG $ \_v s ->
+    maybe mempty (jsonField fn . toJSON) (aview l s)
 
   freeTextFieldDef :: FieldName -> ALens' s String -> JSONFieldGrammar s String
-  freeTextFieldDef fn l = JsonFG $ \_v cs ->
-    jsonField cs fn . toJSON . aview l
+  freeTextFieldDef fn l = JsonFG $ \_v ->
+    jsonField fn . toJSON . aview l
 
   freeTextFieldDefST :: FieldName -> ALens' s ST.ShortText -> JSONFieldGrammar s ST.ShortText
   freeTextFieldDefST = defaultFreeTextFieldDefST
 
   monoidalFieldAla :: (ToJSON b, Monoid a, Newtype a b) => FieldName -> (a -> b) -> ALens' s a -> JSONFieldGrammar s a
-  monoidalFieldAla fn _pack l = JsonFG $ \_v cs ->
-    jsonField cs fn . toJSON . pack' _pack . aview l
+  monoidalFieldAla fn _pack l = JsonFG $ \_v ->
+    jsonField fn . toJSON . pack' _pack . aview l
 
   prefixedFields :: FieldName -> ALens' s [(String, String)] -> JSONFieldGrammar s [(String, String)]
-  prefixedFields _fnPfx l = JsonFG $ \_v _cs s ->
+  prefixedFields _fnPfx l = JsonFG $ \_v s ->
     [n .= JsonString v | (n, v) <- aview l s]
 
   knownField :: FieldName -> JSONFieldGrammar s ()
@@ -107,15 +106,13 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
 
   hiddenField _ = JsonFG (const mempty)
 
-jsonField :: [Condition ConfVar] -> FieldName -> Json -> [Pair]
-jsonField _cs _fn (JsonArray []) = mempty
-jsonField _cs _fn (JsonObject []) = mempty
-jsonField _cs _fn (JsonString []) = mempty
-jsonField [] fn v = [fromUTF8BS fn .= v]
-jsonField cs fn v = [fromUTF8BS fn .= v']
-  where
-    v' = JsonObject ["if" .= toJSON (foldl1' CAnd cs), "then" .= v]
+jsonField :: FieldName -> Json -> [Pair]
+jsonField _fn (JsonArray []) = mempty
+jsonField _fn (JsonObject []) = mempty
+jsonField _fn (JsonString []) = mempty
+jsonField fn v = [fromUTF8BS fn .= v]
 
+-- FIXME: too many fmaps
 jsonGenericPackageDescription :: GenericPackageDescription -> Json
 jsonGenericPackageDescription gpd =
   JsonObject $
@@ -127,15 +124,15 @@ jsonGenericPackageDescription gpd =
         jsonCondSubLibraries v (condSubLibraries gpd),
         jsonCondForeignLibs v (condForeignLibs gpd),
         jsonCondExecutables v (condExecutables gpd),
-        jsonCondTestSuites v (condTestSuites gpd),
-        jsonCondBenchmarks v (condBenchmarks gpd)
+        jsonCondTestSuites v (fmap (fmap (mapTreeData unvalidateTestSuite)) $ condTestSuites gpd),
+        jsonCondBenchmarks v (fmap (fmap (mapTreeData unvalidateBenchmark)) $ condBenchmarks gpd)
       ]
   where
     v = specVersion $ packageDescription gpd
 
 jsonPackageDescription :: CabalSpecVersion -> PackageDescription -> [Pair]
 jsonPackageDescription v pd =
-  jsonFieldGrammar v [] packageDescriptionFieldGrammar pd
+  jsonFieldGrammar v packageDescriptionFieldGrammar pd
     <> jsonSourceRepos v (sourceRepos pd)
 
 jsonSourceRepos :: CabalSpecVersion -> [SourceRepo] -> [Pair]
@@ -144,7 +141,7 @@ jsonSourceRepos v srs =
 
 jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> [Pair]
 jsonSourceRepo v repo =
-  jsonFieldGrammar v [] (sourceRepoFieldGrammar (repoKind repo)) repo
+  jsonFieldGrammar v (sourceRepoFieldGrammar (repoKind repo)) repo
 
 jsonSetupBInfo :: CabalSpecVersion -> Maybe SetupBuildInfo -> [Pair]
 jsonSetupBInfo _ Nothing = mempty
@@ -153,29 +150,31 @@ jsonSetupBInfo v (Just sbi) =
   -- \| defaultSetupDepends sbi = mempty
   ["custom-setup" .= JsonObject vs | not (null vs)]
   where
-    vs = jsonFieldGrammar v [] (setupBInfoFieldGrammar False) sbi
+    vs = jsonFieldGrammar v (setupBInfoFieldGrammar False) sbi
 
 jsonGenPackageFlags :: CabalSpecVersion -> [PackageFlag] -> [Pair]
 jsonGenPackageFlags v flags = ["flags" .= flags' | not (null flags)]
   where
     flags' =
       JsonObject
-        [ unFlagName name .= JsonObject (jsonFieldGrammar v [] (flagFieldGrammar name) flag)
+        [ unFlagName name .= JsonObject (jsonFieldGrammar v (flagFieldGrammar name) flag)
         | flag@(MkPackageFlag name _ _ _) <- flags
         ]
 
 jsonCondLibrary :: CabalSpecVersion -> Maybe (CondTree ConfVar [Dependency] Library) -> [Pair]
 jsonCondLibrary _ Nothing = mempty
-jsonCondLibrary v (Just condTree) = ["library" .= mainlibJson]
+jsonCondLibrary v (Just condTree) = ["library" .= JsonObject mainlibJson]
   where
-    mainlibJson = jsonCondTree2 v (libraryFieldGrammar LMainLibName) condTree
+    mainlibJson = jsonCondTree v (libraryFieldGrammar LMainLibName) condTree
+
+-- NOTE: Can we reduce this boilerplate?
 
 jsonCondSubLibraries :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] Library)] -> [Pair]
 jsonCondSubLibraries v libs = ["sub-libraries" .= sublibsJson | not (null libs)]
   where
     sublibsJson =
       JsonObject
-        [ unUnqualComponentName n .= jsonCondTree2 v (libraryFieldGrammar $ LSubLibName n) condTree
+        [ unUnqualComponentName n .= JsonObject (jsonCondTree v (libraryFieldGrammar $ LSubLibName n) condTree)
         | (n, condTree) <- libs
         ]
 
@@ -184,7 +183,7 @@ jsonCondForeignLibs v flibs = ["foreign-libraries" .= flibsJson | not (null flib
   where
     flibsJson =
       JsonObject
-        [ unUnqualComponentName n .= jsonCondTree2 v (foreignLibFieldGrammar n) condTree | (n, condTree) <- flibs
+        [ unUnqualComponentName n .= JsonObject (jsonCondTree v (foreignLibFieldGrammar n) condTree) | (n, condTree) <- flibs
         ]
 
 jsonCondExecutables :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] Executable)] -> [Pair]
@@ -192,38 +191,44 @@ jsonCondExecutables v exes = ["executables" .= exesJson | not (null exes)]
   where
     exesJson =
       JsonObject
-        [ unUnqualComponentName n .= jsonCondTree2 v (executableFieldGrammar n) condTree
+        [ unUnqualComponentName n .= JsonObject (jsonCondTree v (executableFieldGrammar n) condTree)
         | (n, condTree) <- exes
         ]
 
-jsonCondTestSuites :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] TestSuite)] -> [Pair]
+jsonCondTestSuites :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] TestSuiteStanza)] -> [Pair]
 jsonCondTestSuites v suites = ["test-suites" .= suitesJson | not (null suites)]
   where
     suitesJson =
       JsonObject
-        [ unUnqualComponentName n .= jsonCondTree2 v testSuiteFieldGrammar (fmap unvalidateTestSuite condTree)
+        [ unUnqualComponentName n .= JsonObject (jsonCondTree v testSuiteFieldGrammar condTree)
         | (n, condTree) <- suites
         ]
 
-jsonCondBenchmarks :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] Benchmark)] -> [Pair]
+jsonCondBenchmarks :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] BenchmarkStanza)] -> [Pair]
 jsonCondBenchmarks v suites = ["benchmarks" .= suitesJson | not (null suites)]
   where
     suitesJson =
       JsonObject
-        [ unUnqualComponentName n .= jsonCondTree2 v benchmarkFieldGrammar (fmap unvalidateBenchmark condTree)
+        [ unUnqualComponentName n .= JsonObject (jsonCondTree v benchmarkFieldGrammar condTree)
         | (n, condTree) <- suites
         ]
 
-jsonCondTree2 :: CabalSpecVersion -> JSONFieldGrammar' s -> CondTree ConfVar [Dependency] s -> Json
-jsonCondTree2 v grammar = merge . go []
+jsonCondTree :: CabalSpecVersion -> JSONFieldGrammar' s -> CondTree ConfVar [Dependency] s -> [Pair]
+jsonCondTree v fg = goTree
   where
-    go cs (CondNode it _ ifs) =
-      jsonFieldGrammar v cs grammar it ++ concatMap (jsonIf cs) ifs
+    goTree (CondNode a _c ifs) =
+      jsonFieldGrammar v fg a ++ concatMap goBranch ifs
+    goBranch (CondBranch c thenTree Nothing) =
+      [ "_if" .= toJSON c,
+        "_then" .= JsonObject (jsonCondTree v fg thenTree)
+      ]
+    goBranch (CondBranch c thenTree (Just elseTree)) =
+      [ "_if" .= toJSON c,
+        "_then" .= JsonObject (jsonCondTree v fg thenTree),
+        "_else" .= JsonObject (jsonCondTree v fg elseTree)
+      ]
 
-    jsonIf cs (CondBranch c thenTree Nothing) =
-      go (c : cs) thenTree
-    jsonIf cs (CondBranch c thenTree (Just elseTree)) =
-      go (c : cs) thenTree ++ go (CNot c : cs) elseTree
-
-    merge :: [Pair] -> Json
-    merge = JsonObject
+-- jsonIf  (CondBranch c thenTree Nothing) =
+--   go  thenTree
+-- jsonIf  (CondBranch c thenTree (Just elseTree)) =
+--   go  thenTree ++ go (CNot c : cs) elseTree
