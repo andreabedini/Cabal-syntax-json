@@ -1,7 +1,4 @@
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module ToJSON where
@@ -129,7 +126,11 @@ deriving via (ViaUnpack (MQuoted a)) instance (ToJSON a) => ToJSON (MQuoted a)
 -- deriving via (ViaPretty Dependency) instance ToJSON Dependency
 instance ToJSON Dependency where
   toJSON (Dependency pn vr libs) =
-    JsonObject ["name" .= toJSON pn, "version" .= toJSON vr, "libs" .= libsJson]
+    JsonObject
+      [ "name" .= toJSON pn,
+        "version" .= toJSON vr,
+        "libs" .= libsJson
+      ]
     where
       libsJson = JsonArray [libName l | l <- NE.toList libs]
 

@@ -14,4 +14,4 @@ executable cabal2json
                   , Cabal-syntax ^>= 3.12.0.0
   other-modules:    ToJSON
   hs-source-dirs:   app
-  default-language: Haskell2010
+  default-language: GHC2021
