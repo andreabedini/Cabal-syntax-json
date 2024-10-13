@@ -10,7 +10,8 @@ executable cabal2json
   main-is:          Main.hs
   build-depends:    base         ^>= 4.19 || ^>= 4.20
                   , bytestring   ^>= 0.12.1.0
-                  , Cabal         
-                  , Cabal-syntax  
+                  , Cabal        ^>= 3.12.0.0
+                  , Cabal-syntax ^>= 3.12.0.0
   other-modules:    ToJSON
+  hs-source-dirs:   app
   default-language: Haskell2010
