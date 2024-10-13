@@ -97,6 +97,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
   deprecatedSince :: CabalSpecVersion -> String -> JSONFieldGrammar s a -> JSONFieldGrammar s a
   deprecatedSince _ _ x = x
 
+  -- FIXME: I think this comment got magled, check the original
   -- TODO: as PrettyFieldGrammar isn't aware of cabal-version: we output the field
   -- this doesn't affect roundtrip as `removedIn` fields cannot be parsed
   -- so invalid documents can be only manually constructed.
