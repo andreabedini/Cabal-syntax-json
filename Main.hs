@@ -8,6 +8,7 @@
 
 module Main (main) where
 
+import Compat
 import Data.ByteString.Lazy qualified as BL
 import Data.List (foldl1')
 import Distribution.CabalSpecVersion
@@ -17,7 +18,6 @@ import Distribution.FieldGrammar
 import Distribution.Fields
 import Distribution.PackageDescription
 import Distribution.PackageDescription.FieldGrammar
-import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Utils.Generic (fromUTF8BS)
 import Distribution.Utils.Json
 import Distribution.Utils.ShortText qualified as ST
@@ -28,7 +28,7 @@ import ToJSON
 main :: IO ()
 main = do
   fn_in : mb_fn_out <- getArgs
-  gpd <- readGenericPackageDescription normal fn_in
+  gpd <- readGenericPackageDescription normal Nothing (makeSymbolicPath fn_in)
   let bs = renderJson $ jsonGenericPackageDescription gpd
   case mb_fn_out of
     [] -> BL.putStr bs

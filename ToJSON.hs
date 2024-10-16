@@ -1,11 +1,15 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module ToJSON where
 
+import Compat
 import Data.Functor.Identity
 import Data.Kind
 import Distribution.Compat.Newtype
@@ -40,7 +44,6 @@ import Distribution.Types.TestType
 import Distribution.Types.Version
 import Distribution.Types.VersionRange
 import Distribution.Utils.Json
-import Distribution.Utils.Path
 import Language.Haskell.Extension
 
 class ToJSON a where
@@ -92,9 +95,17 @@ deriving via String instance ToJSON Token'
 
 deriving via String instance ToJSON FilePathNT
 
-deriving via String instance ToJSON CompatFilePath
+deriving via ViaPretty (SymbolicPathNT from to) instance ToJSON (SymbolicPathNT from to)
 
-deriving via ViaUnpack CompatLicenseFile instance ToJSON CompatLicenseFile
+deriving via ViaPretty (RelativePathNT from to) instance ToJSON (RelativePathNT from to)
+
+deriving via ViaPretty (SymbolicPath from to) instance ToJSON (SymbolicPath from to)
+
+deriving via ViaPretty (RelativePath from to) instance ToJSON (RelativePath from to)
+
+deriving via ViaPretty CompatDataDir instance ToJSON CompatDataDir
+
+deriving via ViaPretty CompatLicenseFile instance ToJSON CompatLicenseFile
 
 deriving via ViaPretty VersionRange instance ToJSON VersionRange
 
@@ -102,13 +113,13 @@ deriving via ViaUnpack TestedWith instance ToJSON TestedWith
 
 deriving via ViaPretty CompilerFlavor instance ToJSON CompilerFlavor
 
-deriving via (ViaPretty SpecVersion) instance ToJSON SpecVersion
+deriving via ViaPretty SpecVersion instance ToJSON SpecVersion
 
-deriving via (ViaPretty SpecLicense) instance ToJSON SpecLicense
+deriving via ViaPretty SpecLicense instance ToJSON SpecLicense
 
 deriving via (ViaUnpack (List sep b a)) instance (ToJSON a) => ToJSON (List sep b a)
 
-deriving via (ViaPretty (SymbolicPath from to)) instance ToJSON (SymbolicPath from to)
+deriving via (ViaPretty CompatFilePath) instance ToJSON CompatFilePath
 
 deriving via (ViaPretty BuildType) instance ToJSON BuildType
 
@@ -126,7 +137,6 @@ deriving via (ViaPretty Language) instance ToJSON Language
 
 deriving via (ViaUnpack (MQuoted a)) instance (ToJSON a) => ToJSON (MQuoted a)
 
--- deriving via (ViaPretty Dependency) instance ToJSON Dependency
 instance ToJSON Dependency where
   toJSON (Dependency pn vr libs) =
     JsonObject ["name" .= toJSON pn, "version" .= toJSON vr, "libs" .= libsJson]
