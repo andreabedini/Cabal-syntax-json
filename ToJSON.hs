@@ -47,47 +47,47 @@ import Distribution.Utils.Json
 import Language.Haskell.Extension
 
 class ToJSON a where
-  toJSON :: a -> Json
+    toJSON :: a -> Json
 
-  toJSONList :: [a] -> Json
-  toJSONList = listValue toJSON
+    toJSONList :: [a] -> Json
+    toJSONList = listValue toJSON
 
 class ToJSON1 f where
-  liftToJSON :: (a -> Json) -> ([a] -> Json) -> f a -> Json
+    liftToJSON :: (a -> Json) -> ([a] -> Json) -> f a -> Json
 
 instance ToJSON1 [] where
-  liftToJSON _ f = f
+    liftToJSON _ f = f
 
 -- | Helper function to use with 'liftToJSON', see 'listEncoding'.
 listValue :: (a -> Json) -> [a] -> Json
 listValue f = JsonArray . map f
 
 instance ToJSON Char where
-  toJSON c = JsonString [c]
-  toJSONList = JsonString
+    toJSON c = JsonString [c]
+    toJSONList = JsonString
 
 instance ToJSON Bool where
-  toJSON = JsonBool
+    toJSON = JsonBool
 
-instance (ToJSON a) => ToJSON [a] where
-  toJSON = liftToJSON toJSON toJSONList
+instance ToJSON a => ToJSON [a] where
+    toJSON = liftToJSON toJSON toJSONList
 
 instance (ToJSON a, ToJSON b) => ToJSON (a, b) where
-  toJSON (a, b) = JsonArray [toJSON a, toJSON b]
+    toJSON (a, b) = JsonArray [toJSON a, toJSON b]
 
-deriving via (a :: Type) instance (ToJSON a) => ToJSON (Identity a)
+deriving via (a :: Type) instance ToJSON a => ToJSON (Identity a)
 
 type Pair = (String, Json)
 
 newtype ViaPretty a = ViaPretty a
 
-instance (Pretty a) => ToJSON (ViaPretty a) where
-  toJSON (ViaPretty a) = JsonString $ prettyShow a
+instance Pretty a => ToJSON (ViaPretty a) where
+    toJSON (ViaPretty a) = JsonString $ prettyShow a
 
 newtype ViaUnpack a = ViaUnpack a
 
 instance (ToJSON o, Newtype o n) => ToJSON (ViaUnpack n) where
-  toJSON (ViaUnpack n) = toJSON $ unpack n
+    toJSON (ViaUnpack n) = toJSON $ unpack n
 
 deriving via String instance ToJSON Token
 
@@ -117,7 +117,7 @@ deriving via ViaPretty SpecVersion instance ToJSON SpecVersion
 
 deriving via ViaPretty SpecLicense instance ToJSON SpecLicense
 
-deriving via (ViaUnpack (List sep b a)) instance (ToJSON a) => ToJSON (List sep b a)
+deriving via (ViaUnpack (List sep b a)) instance ToJSON a => ToJSON (List sep b a)
 
 deriving via (ViaPretty CompatFilePath) instance ToJSON CompatFilePath
 
@@ -135,17 +135,17 @@ deriving via (ViaPretty Extension) instance ToJSON Extension
 
 deriving via (ViaPretty Language) instance ToJSON Language
 
-deriving via (ViaUnpack (MQuoted a)) instance (ToJSON a) => ToJSON (MQuoted a)
+deriving via (ViaUnpack (MQuoted a)) instance ToJSON a => ToJSON (MQuoted a)
 
 instance ToJSON Dependency where
-  toJSON (Dependency pn vr libs) =
-    JsonObject ["name" .= toJSON pn, "version" .= toJSON vr, "libs" .= libsJson]
-    where
-      libsJson = JsonArray [libName l | l <- NE.toList libs]
+    toJSON (Dependency pn vr libs) =
+        JsonObject ["name" .= toJSON pn, "version" .= toJSON vr, "libs" .= libsJson]
+      where
+        libsJson = JsonArray [libName l | l <- NE.toList libs]
 
-      libName :: LibraryName -> Json
-      libName LMainLibName = toJSON pn
-      libName (LSubLibName n) = toJSON (unUnqualComponentName n)
+        libName :: LibraryName -> Json
+        libName LMainLibName = toJSON pn
+        libName (LSubLibName n) = toJSON (unUnqualComponentName n)
 
 deriving via (ViaPretty BenchmarkType) instance ToJSON BenchmarkType
 
@@ -180,14 +180,14 @@ deriving via (ViaPretty Arch) instance ToJSON Arch
 deriving via (ViaPretty OS) instance ToJSON OS
 
 instance ToJSON ConfVar where
-  toJSON (OS os) = JsonObject ["os" .= toJSON os]
-  toJSON (Arch arch) = JsonObject ["arch" .= toJSON arch]
-  toJSON (PackageFlag flag) = JsonObject ["flag" .= toJSON flag]
-  toJSON (Impl flavor range) = JsonObject ["impl" .= toJSON flavor, "range" .= toJSON range]
+    toJSON (OS os) = JsonObject ["os" .= toJSON os]
+    toJSON (Arch arch) = JsonObject ["arch" .= toJSON arch]
+    toJSON (PackageFlag flag) = JsonObject ["flag" .= toJSON flag]
+    toJSON (Impl flavor range) = JsonObject ["impl" .= toJSON flavor, "range" .= toJSON range]
 
-instance (ToJSON c) => ToJSON (Condition c) where
-  toJSON (Var v) = toJSON v
-  toJSON (Lit b) = toJSON b
-  toJSON (CNot c) = JsonObject ["not" .= toJSON c]
-  toJSON (COr l r) = JsonObject ["or" .= JsonArray [toJSON l, toJSON r]]
-  toJSON (CAnd l r) = JsonObject ["and" .= JsonArray [toJSON l, toJSON r]]
+instance ToJSON c => ToJSON (Condition c) where
+    toJSON (Var v) = toJSON v
+    toJSON (Lit b) = toJSON b
+    toJSON (CNot c) = JsonObject ["not" .= toJSON c]
+    toJSON (COr l r) = JsonObject ["or" .= JsonArray [toJSON l, toJSON r]]
+    toJSON (CAnd l r) = JsonObject ["and" .= JsonArray [toJSON l, toJSON r]]

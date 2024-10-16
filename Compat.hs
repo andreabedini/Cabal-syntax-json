@@ -5,18 +5,18 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Compat
-  ( Compat.readGenericPackageDescription,
-    makeSymbolicPath,
-    SymbolicPath (..),
-    RelativePath (..),
-    SymbolicPathNT (..),
-    RelativePathNT (..),
-    CompatFilePath (..),
-    CompatDataDir (..),
-    CWD,
-    FileOrDir (..),
-    Pkg,
-  )
+    ( Compat.readGenericPackageDescription
+    , makeSymbolicPath
+    , SymbolicPath (..)
+    , RelativePath (..)
+    , SymbolicPathNT (..)
+    , RelativePathNT (..)
+    , CompatFilePath (..)
+    , CompatDataDir (..)
+    , CWD
+    , FileOrDir (..)
+    , Pkg
+    )
 where
 
 import Data.Kind (Type)
