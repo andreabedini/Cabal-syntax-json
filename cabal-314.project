@@ -1,4 +1,2 @@
 packages: .
 constraints: Cabal-syntax ^>=3.14, Cabal ^>=3.14
-allow-older: Cabal-syntax-json:*
-allow-newer: Cabal-syntax-json:*
