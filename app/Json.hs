@@ -1,23 +1,23 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module ToJSON where
+module Json
+    ( module Json
+    , module Distribution.Utils.Json
+    )
+where
 
 import Compat
 import Data.Functor.Identity
 import Data.Kind
+import Data.Map (Map)
+import Data.Map qualified as Map
 import Distribution.Compat.Newtype
-import qualified Distribution.Compat.NonEmptySet as NE
+import Distribution.Compat.Prelude qualified as NE
 import Distribution.Compiler
 import Distribution.FieldGrammar
 import Distribution.ModuleName
-import Distribution.PackageDescription (unUnqualComponentName)
 import Distribution.PackageDescription.FieldGrammar
 import Distribution.Pretty
 import Distribution.System
@@ -39,8 +39,11 @@ import Distribution.Types.Mixin
 import Distribution.Types.ModuleReexport
 import Distribution.Types.PackageName
 import Distribution.Types.PkgconfigDependency
+import Distribution.Types.PkgconfigName
+import Distribution.Types.PkgconfigVersionRange
 import Distribution.Types.SourceRepo
 import Distribution.Types.TestType
+import Distribution.Types.UnqualComponentName
 import Distribution.Types.Version
 import Distribution.Types.VersionRange
 import Distribution.Utils.Json
@@ -52,30 +55,9 @@ class ToJSON a where
     toJSONList :: [a] -> Json
     toJSONList = listValue toJSON
 
-class ToJSON1 f where
-    liftToJSON :: (a -> Json) -> ([a] -> Json) -> f a -> Json
-
-instance ToJSON1 [] where
-    liftToJSON _ f = f
-
 -- | Helper function to use with 'liftToJSON', see 'listEncoding'.
 listValue :: (a -> Json) -> [a] -> Json
 listValue f = JsonArray . map f
-
-instance ToJSON Char where
-    toJSON c = JsonString [c]
-    toJSONList = JsonString
-
-instance ToJSON Bool where
-    toJSON = JsonBool
-
-instance ToJSON a => ToJSON [a] where
-    toJSON = liftToJSON toJSON toJSONList
-
-instance (ToJSON a, ToJSON b) => ToJSON (a, b) where
-    toJSON (a, b) = JsonArray [toJSON a, toJSON b]
-
-deriving via (a :: Type) instance ToJSON a => ToJSON (Identity a)
 
 type Pair = (String, Json)
 
@@ -125,6 +107,10 @@ deriving via (ViaPretty BuildType) instance ToJSON BuildType
 
 deriving via (ViaPretty PackageName) instance ToJSON PackageName
 
+deriving via (ViaPretty PkgconfigName) instance ToJSON PkgconfigName
+
+deriving via (ViaPretty PkgconfigVersionRange) instance ToJSON PkgconfigVersionRange
+
 deriving via (ViaPretty Version) instance ToJSON Version
 
 deriving via (ViaPretty RepoType) instance ToJSON RepoType
@@ -136,16 +122,6 @@ deriving via (ViaPretty Extension) instance ToJSON Extension
 deriving via (ViaPretty Language) instance ToJSON Language
 
 deriving via (ViaUnpack (MQuoted a)) instance ToJSON a => ToJSON (MQuoted a)
-
-instance ToJSON Dependency where
-    toJSON (Dependency pn vr libs) =
-        JsonObject ["name" .= toJSON pn, "version" .= toJSON vr, "libs" .= libsJson]
-      where
-        libsJson = JsonArray [libName l | l <- NE.toList libs]
-
-        libName :: LibraryName -> Json
-        libName LMainLibName = toJSON pn
-        libName (LSubLibName n) = toJSON (unUnqualComponentName n)
 
 deriving via (ViaPretty BenchmarkType) instance ToJSON BenchmarkType
 
@@ -165,10 +141,6 @@ deriving via (ViaPretty ModuleReexport) instance ToJSON ModuleReexport
 
 deriving via (ViaPretty Mixin) instance ToJSON Mixin
 
-deriving via (ViaPretty PkgconfigDependency) instance ToJSON PkgconfigDependency
-
-deriving via (ViaPretty ExeDependency) instance ToJSON ExeDependency
-
 deriving via (ViaPretty LegacyExeDependency) instance ToJSON LegacyExeDependency
 
 deriving via (ViaPretty LibraryVisibility) instance ToJSON LibraryVisibility
@@ -178,6 +150,35 @@ deriving via (ViaPretty FlagName) instance ToJSON FlagName
 deriving via (ViaPretty Arch) instance ToJSON Arch
 
 deriving via (ViaPretty OS) instance ToJSON OS
+
+deriving via (ViaPretty UnqualComponentName) instance ToJSON UnqualComponentName
+
+instance ToJSON ExeDependency where
+    toJSON (ExeDependency pn ucn vr) =
+        JsonObject $
+            [ "package" .= toJSON pn
+            , "version" .= toJSON vr
+            , "exe" .= toJSON ucn
+            ]
+
+instance ToJSON Dependency where
+    toJSON (Dependency pn vr libs) =
+        JsonObject $
+            [ "package" .= toJSON pn
+            , "version" .= toJSON vr
+            , "libs"
+                .= JsonArray
+                    [ maybe (toJSON pn) toJSON (libraryNameString l)
+                    | l <- NE.toList libs
+                    ]
+            ]
+
+instance ToJSON PkgconfigDependency where
+    toJSON (PkgconfigDependency pn vr) =
+        JsonObject $
+            [ "name" .= toJSON pn
+            , "version" .= toJSON vr
+            ]
 
 instance ToJSON ConfVar where
     toJSON (OS os) = JsonObject ["os" .= toJSON os]
@@ -191,3 +192,24 @@ instance ToJSON c => ToJSON (Condition c) where
     toJSON (CNot c) = JsonObject ["not" .= toJSON c]
     toJSON (COr l r) = JsonObject ["or" .= JsonArray [toJSON l, toJSON r]]
     toJSON (CAnd l r) = JsonObject ["and" .= JsonArray [toJSON l, toJSON r]]
+
+instance ToJSON Char where
+    toJSON c = JsonString [c]
+    toJSONList = JsonString
+
+instance ToJSON Bool where
+    toJSON = JsonBool
+
+instance ToJSON a => ToJSON [a] where
+    toJSON = toJSONList
+
+instance (ToJSON a, ToJSON b) => ToJSON (a, b) where
+    toJSON (a, b) = JsonArray [toJSON a, toJSON b]
+
+instance ToJSON a => ToJSON (Map String a) where
+    toJSON = JsonObject . Map.foldMapWithKey (\k v -> [(k, toJSON v)])
+
+deriving via (a :: Type) instance ToJSON a => ToJSON (Identity a)
+
+instance ToJSON Json where
+    toJSON = id

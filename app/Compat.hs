@@ -3,12 +3,13 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# OPTIONS_GHC -Wall #-}
 
 module Compat
     ( Compat.readGenericPackageDescription
     , makeSymbolicPath
-    , SymbolicPath (..)
-    , RelativePath (..)
+    , SymbolicPath
+    , RelativePath
     , SymbolicPathNT (..)
     , RelativePathNT (..)
     , CompatFilePath (..)
@@ -19,17 +20,23 @@ module Compat
     )
 where
 
-import Data.Kind (Type)
 import Data.String
-import Distribution.Compat.CharParsing (text)
 import Distribution.FieldGrammar.Newtypes
 import Distribution.PackageDescription (GenericPackageDescription)
 import Distribution.PackageDescription.FieldGrammar
-import Distribution.Pretty (Pretty (..), showFilePath)
+import Distribution.Pretty
+  ( Pretty (..)
+#if !MIN_VERSION_Cabal_syntax(3,14,0) && MIN_VERSION_Cabal_syntax(3,10,0)
+  , showFilePath
+#endif
+  )
 import Distribution.Simple.PackageDescription
 import Distribution.Utils.Path
 import Distribution.Verbosity (Verbosity)
+#if !MIN_VERSION_Cabal_syntax(3,14,0) && MIN_VERSION_Cabal_syntax(3,10,0)
+import Data.Kind (Type)
 import GHC.Stack (HasCallStack)
+#endif
 
 #if MIN_VERSION_Cabal_syntax(3,14,0)
 
@@ -38,6 +45,11 @@ newtype CompatFilePath = CompatFilePath FilePath
 instance Pretty CompatFilePath where
   pretty (CompatFilePath fpath) = fromString fpath
 
+readGenericPackageDescription
+   :: Verbosity
+   -> Maybe (SymbolicPath CWD (Dir Pkg))
+   -> SymbolicPath Pkg File
+   -> IO GenericPackageDescription
 readGenericPackageDescription = Distribution.Simple.PackageDescription.readGenericPackageDescription
 
 #elif MIN_VERSION_Cabal_syntax(3,10,0)
