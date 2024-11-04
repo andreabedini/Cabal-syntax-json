@@ -24,21 +24,29 @@ import Data.String
 import Distribution.FieldGrammar.Newtypes
 import Distribution.PackageDescription (GenericPackageDescription)
 import Distribution.PackageDescription.FieldGrammar
+{- FOURMOLU_DISABLE -}
 import Distribution.Pretty
   ( Pretty (..)
 #if !MIN_VERSION_Cabal_syntax(3,14,0) && MIN_VERSION_Cabal_syntax(3,10,0)
   , showFilePath
 #endif
   )
+{- FOURMOLU_ENABLE -}
 import Distribution.Simple.PackageDescription
 import Distribution.Utils.Path
 import Distribution.Verbosity (Verbosity)
+{- FOURMOLU_DISABLE -}
 #if !MIN_VERSION_Cabal_syntax(3,14,0) && MIN_VERSION_Cabal_syntax(3,10,0)
+{- FOURMOLU_ENABLE -}
 import Data.Kind (Type)
 import GHC.Stack (HasCallStack)
+{- FOURMOLU_DISABLE -}
 #endif
+{- FOURMOLU_ENABLE -}
 
+{- FOURMOLU_DISABLE -}
 #if MIN_VERSION_Cabal_syntax(3,14,0)
+{- FOURMOLU_ENABLE -}
 
 newtype CompatFilePath = CompatFilePath FilePath
 
@@ -52,7 +60,9 @@ readGenericPackageDescription
    -> IO GenericPackageDescription
 readGenericPackageDescription = Distribution.Simple.PackageDescription.readGenericPackageDescription
 
+{- FOURMOLU_DISABLE -}
 #elif MIN_VERSION_Cabal_syntax(3,10,0)
+{- FOURMOLU_ENABLE -}
 
 newtype CompatDataDir = CompatDataDir FilePath
 
@@ -88,4 +98,6 @@ readGenericPackageDescription normal _mbWorkDir fpath =
 makeSymbolicPath :: FilePath -> SymbolicPath from to 
 makeSymbolicPath fpath = unsafeMakeSymbolicPath fpath
 
+{- FOURMOLU_DISABLE -}
 #endif
+{- FOURMOLU_ENABLE -}

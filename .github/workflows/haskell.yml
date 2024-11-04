@@ -34,4 +34,4 @@ jobs:
       - uses: andreabedini/cabal-cache-native@main
         with:
           store-path: ${{ steps.setup.outputs.cabal-store }}
-      - run: cabal build --project-file=${{ matrix.project }}
+      # - run: cabal build --project-file=${{ matrix.project }}

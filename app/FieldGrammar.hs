@@ -1,6 +1,8 @@
-module FieldGrammar where
+module FieldGrammar (jsonGenericPackageDescription) where
 
+import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable (Foldable (..))
+import Data.Maybe (fromMaybe)
 import Distribution.CabalSpecVersion (CabalSpecVersion)
 import Distribution.Compat.Lens (ALens', aview)
 import Distribution.Compat.Newtype (Newtype, pack')
@@ -9,23 +11,25 @@ import Distribution.FieldGrammar
     , defaultFreeTextFieldDefST
     )
 import Distribution.Fields (FieldName)
+import Distribution.Package (Package (..))
 import Distribution.PackageDescription
     ( CondBranch (..)
     , CondTree (..)
     , Condition (..)
     , ConfVar
-    , FlagName
     , GenericPackageDescription (..)
     , LibraryName (..)
     , PackageDescription (..)
     , PackageFlag (..)
+    , PackageIdentifier (..)
     , SetupBuildInfo
     , SourceRepo (..)
-    , UnqualComponentName
     , cAnd
     , cNot
+    , libraryNameString
     , mapTreeData
     , unFlagName
+    , unPackageName
     , unUnqualComponentName
     )
 import Distribution.PackageDescription.FieldGrammar
@@ -41,121 +45,119 @@ import Distribution.PackageDescription.FieldGrammar
     , unvalidateBenchmark
     , unvalidateTestSuite
     )
+import Distribution.Pretty (prettyShow)
 import Distribution.Utils.Generic (fromUTF8BS)
-import Distribution.Utils.Json
-    ( Json (..)
-    , (.=)
-    )
+import Distribution.Utils.Json (Json (..), (.=))
 import Distribution.Utils.ShortText qualified as ST
-import Json (Pair, ToJSON (..))
+import Json (ToJSON (..))
 import MonoidalMap (MonoidalMap (..))
-
-type FieldMap a = MonoidalMap String a
-
-data Value a
-    = ScalarValue a
-    | ListLikeValue [a]
-    deriving (Show, Functor, Foldable, Traversable)
-
-instance ToJSON a => ToJSON (Value a) where
-    toJSON (ScalarValue j) = toJSON j
-    toJSON (ListLikeValue js) = JsonArray $ map toJSON js
-    toJSONList vs = JsonArray $ flip foldMap vs $ \case
-        ScalarValue j -> [toJSON j]
-        ListLikeValue js -> map toJSON js
-
-type JsonValue = Value Json
-
-data CJson = CJson (Condition ConfVar) Json
-    deriving Show
-
-instance ToJSON CJson where
-    toJSON (CJson (Lit True) v) = v
-    toJSON (CJson c v) = JsonObject ["_if" .= toJSON c, "_then" .= v]
-
-scalarField :: FieldName -> Json -> [(String, Value Json)]
-scalarField fn v = [(fromUTF8BS fn, ScalarValue v)]
-
-listlikeField :: FieldName -> [Json] -> [(String, Value Json)]
-listlikeField fn vs = [(fromUTF8BS fn, ListLikeValue vs)]
 
 jsonGenericPackageDescription :: GenericPackageDescription -> Json
 jsonGenericPackageDescription gpd =
     JsonObject $
         concat
-            [ disolve $ jsonFieldGrammar v packageDescriptionFieldGrammar $ packageDescription gpd
-            , ["source-repos" .= jsonSourceRepos v repos | let repos = sourceRepos (packageDescription gpd), not (null repos)]
-            , maybe [] (\s -> [("custom-setup", toJSON $ jsonSetupBInfo v s)]) $ setupBuildInfo (packageDescription gpd)
-            , ["flags" .= jsonPackageFlags v flags | let flags = genPackageFlags gpd, not (null flags)]
-            , maybe [] (\l -> [("library", toJSON $ jsonCondTree v (libraryFieldGrammar LMainLibName) l)]) $ condLibrary gpd
-            , named "sub-libraries" $ jsonCondTreeMap v (libraryFieldGrammar . LSubLibName) $ condSubLibraries gpd
-            , named "foreign-libraries" $ jsonCondTreeMap v foreignLibFieldGrammar $ condForeignLibs gpd
-            , named "executables" $ jsonCondTreeMap v executableFieldGrammar $ condExecutables gpd
-            , named "test-suites" $ jsonCondTreeMap v (const testSuiteFieldGrammar) $ fmap (fmap (mapTreeData unvalidateTestSuite)) $ condTestSuites gpd
-            , named "benchmarks" $ jsonCondTreeMap v (const benchmarkFieldGrammar) $ fmap (fmap (mapTreeData unvalidateBenchmark)) $ condBenchmarks gpd
+            [ map (second toJSON) $ jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
+            , [ "source-repos" .= toJSON (map (jsonSourceRepo v) repos)
+              | let repos = sourceRepos (packageDescription gpd)
+              , not (null repos)
+              ]
+            , [ "custom-setup" .= jsonCustomSetup v sbi
+              | sbi <- toList (setupBuildInfo (packageDescription gpd))
+              ]
+            , [ "flags" .= JsonObject [unFlagName (flagName flag) .= jsonFlag v flag | flag <- flags]
+              | let flags = genPackageFlags gpd
+              , not (null flags)
+              ]
+            , [ "libraries"
+                    .= JsonObject
+                        [ (libraryName ln, toJSON (jsonCondTree v (libraryFieldGrammar ln) l))
+                        | (ln, l) <- libraries
+                        ]
+              | not (null libraries)
+              ]
+            , [ "foreign-libraries"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v (foreignLibFieldGrammar ucn) c)
+                        | (ucn, c) <- flibs
+                        ]
+              | let flibs = condForeignLibs gpd
+              , not (null flibs)
+              ]
+            , [ "executables"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v (executableFieldGrammar ucn) c)
+                        | (ucn, c) <- exes
+                        ]
+              | let exes = condExecutables gpd
+              , not (null exes)
+              ]
+            , [ "test-suites"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v testSuiteFieldGrammar c)
+                        | (ucn, c) <- testSuites
+                        ]
+              | not (null testSuites)
+              ]
+            , [ "benchmarks"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v benchmarkFieldGrammar c)
+                        | (ucn, c) <- benchmarks
+                        ]
+              | not (null benchmarks)
+              ]
             ]
   where
+    pn = pkgName $ packageId $ packageDescription gpd
+    libraryName = maybe (unPackageName pn) unUnqualComponentName . libraryNameString
     v = specVersion $ packageDescription gpd
-
-disolve :: [(String, Value Json)] -> [(String, Json)]
-disolve pairs = [(n, toJSON v) | (n, v) <- pairs]
-
-jsonCondTreeMap
-    :: CabalSpecVersion
-    -> (UnqualComponentName -> JSONFieldGrammar s s)
-    -> [(UnqualComponentName, CondTree ConfVar c s)]
-    -> [(String, Json)]
-jsonCondTreeMap ver fg =
-    foldMap
-        ( \(k, v) ->
-            [ (unUnqualComponentName k, toJSON $ jsonCondTree ver (fg k) v)
+    libraries =
+        mconcat
+            [ [(LMainLibName, l) | l <- toList (condLibrary gpd)]
+            , [(LSubLibName ucn, l) | (ucn, l) <- condSubLibraries gpd]
             ]
-        )
+    testSuites = map (fmap (mapTreeData unvalidateTestSuite)) $ condTestSuites gpd
+    benchmarks = map (fmap (mapTreeData unvalidateBenchmark)) $ condBenchmarks gpd
+
+jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> Json
+jsonSourceRepo v repo =
+    JsonObject . map (second toJSON) $ jsonFieldGrammar v (sourceRepoFieldGrammar (repoKind repo)) repo
+
+jsonCustomSetup :: CabalSpecVersion -> SetupBuildInfo -> Json
+jsonCustomSetup v = JsonObject . map (second toJSON) . jsonFieldGrammar v (setupBInfoFieldGrammar False)
+
+jsonFlag :: CabalSpecVersion -> PackageFlag -> Json
+jsonFlag v flag = JsonObject . map (second toJSON) $ jsonFieldGrammar v (flagFieldGrammar (flagName flag)) flag
+
+type FieldMap a = MonoidalMap String a
 
 jsonCondTree
     :: CabalSpecVersion
     -> JSONFieldGrammar s s
     -> CondTree ConfVar c s
-    -> FieldMap [Value CJson]
+    -> FieldMap [Fragment CondJson]
 jsonCondTree ver fg =
-    go (Lit True) . mapTreeData (MonoidalMap . jsonFieldGrammar ver fg)
+    go Nothing . mapTreeData (MonoidalMap . jsonFieldGrammar ver fg)
   where
-    go :: Condition ConfVar -> CondTree ConfVar c (FieldMap (Value Json)) -> FieldMap [Value CJson]
+    go :: Maybe (Condition ConfVar) -> CondTree ConfVar c (FieldMap JsonFragment) -> FieldMap [Fragment CondJson]
     go c (CondNode it _ ifs) =
-        fmap (traverse $ \j -> [CJson c j]) it <> foldMap (goBranch c) ifs
+        fmap (traverse $ \j -> [CondJson c j]) it <> foldMap (goBranch c) ifs
 
-    goBranch :: Condition ConfVar -> CondBranch ConfVar c (FieldMap (Value Json)) -> FieldMap [Value CJson]
-    goBranch c1 (CondBranch c2 thenTree elseTree) =
-        go (c1 `cAnd` c2) thenTree <> foldMap (go (c1 `cAnd` cNot c2)) elseTree
+    goBranch :: Maybe (Condition ConfVar) -> CondBranch ConfVar c (FieldMap JsonFragment) -> FieldMap [Fragment CondJson]
+    goBranch mc (CondBranch c thenTree elseTree) =
+        go (Just (c' `cAnd` c)) thenTree <> foldMap (go (Just (c' `cAnd` cNot c))) elseTree
+      where
+        c' = fromMaybe (Lit True) mc
 
-jsonSourceRepos :: CabalSpecVersion -> [SourceRepo] -> Json
-jsonSourceRepos v = JsonArray . fmap (toJSON . MonoidalMap . jsonSourceRepo v)
-
-jsonPackageFlags :: CabalSpecVersion -> [PackageFlag] -> Json
-jsonPackageFlags v flags =
-    JsonObject
-        [ unFlagName name .= toJSON (MonoidalMap $ jsonPackageFlag v name flag)
-        | flag@(MkPackageFlag name _ _ _) <- flags
-        ]
-
-jsonPackageFlag :: CabalSpecVersion -> FlagName -> PackageFlag -> [(String, Value Json)]
-jsonPackageFlag v name =
-    jsonFieldGrammar v (flagFieldGrammar name)
-
-jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> [(String, Value Json)]
-jsonSourceRepo v repo =
-    jsonFieldGrammar v (sourceRepoFieldGrammar (repoKind repo)) repo
-
-jsonSetupBInfo :: CabalSpecVersion -> SetupBuildInfo -> [(String, Value Json)]
-jsonSetupBInfo v sbi =
-    jsonFieldGrammar v (setupBInfoFieldGrammar False) sbi
+--
+-- FieldGrammar stuff
+--
 
 newtype JSONFieldGrammar s a = JsonFG
-    { fieldGrammarJSON :: CabalSpecVersion -> s -> [(String, JsonValue)]
+    { fieldGrammarJSON :: CabalSpecVersion -> s -> [(String, JsonFragment)]
     }
     deriving Functor
 
-jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> [(String, Value Json)]
+jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> [(String, JsonFragment)]
 jsonFieldGrammar v fg = fieldGrammarJSON fg v
 
 instance Applicative (JSONFieldGrammar s) where
@@ -177,7 +179,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> ALens' s a
         -> JSONFieldGrammar s a
     uniqueFieldAla fn _pack l = JsonFG $ \_ ->
-        scalarField fn . toJSON . pack' _pack . aview l
+        single . scalarFragment fn . toJSON . pack' _pack . aview l
 
     booleanFieldDef
         :: FieldName
@@ -188,7 +190,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         let b = aview l s
          in if b == def
                 then mempty
-                else scalarField fn (toJSON b)
+                else single (scalarFragment fn (toJSON b))
 
     optionalFieldAla
         :: (ToJSON b, Newtype a b)
@@ -197,7 +199,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> ALens' s (Maybe a)
         -> JSONFieldGrammar s (Maybe a)
     optionalFieldAla fn _pack l = JsonFG $ \_ ->
-        maybe mempty (scalarField fn . toJSON . pack' _pack) . aview l
+        maybe mempty (single . scalarFragment fn . toJSON . pack' _pack) . aview l
 
     optionalFieldDefAla
         :: (ToJSON b, Newtype a b, Eq a)
@@ -210,14 +212,14 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         let x = aview l s
          in if x == def
                 then mempty
-                else scalarField fn (toJSON (pack' _pack x))
+                else single (scalarFragment fn (toJSON (pack' _pack x)))
 
     freeTextField
         :: FieldName
         -> ALens' s (Maybe String)
         -> JSONFieldGrammar s (Maybe String)
     freeTextField fn l = JsonFG $ \_ ->
-        maybe mempty (scalarField fn . toJSON) . aview l
+        maybe mempty (single . scalarFragment fn . toJSON) . aview l
 
     freeTextFieldDef
         :: FieldName
@@ -227,7 +229,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         let x = aview l s
          in if x == ""
                 then mempty
-                else scalarField fn (JsonString x)
+                else single (scalarFragment fn (JsonString x))
 
     freeTextFieldDefST
         :: FieldName
@@ -244,15 +246,15 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
     monoidalFieldAla fn _pack l = JsonFG $ \_ s ->
         case toJSON (pack' _pack $ aview l s) of
             JsonArray [] -> mempty
-            JsonArray js -> listlikeField fn js
-            j -> scalarField fn j
+            JsonArray js -> single (listlikeFragment fn js)
+            j -> single (scalarFragment fn j)
 
     prefixedFields
         :: FieldName
         -> ALens' s [(String, String)]
         -> JSONFieldGrammar s [(String, String)]
     prefixedFields _fnPfx l = JsonFG $ \_ s ->
-        [(n, ScalarValue (JsonString v)) | (n, v) <- aview l s]
+        [scalarFragment' n (JsonString v) | (n, v) <- aview l s]
 
     knownField
         :: FieldName
@@ -275,5 +277,35 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
 
     hiddenField _ = JsonFG (const mempty)
 
-named :: Foldable t => String -> t Pair -> [Pair]
-named key xs = [key .= JsonObject (toList xs) | not (null xs)]
+single :: (String, JsonFragment) -> [(String, JsonFragment)]
+single = pure
+
+data Fragment a
+    = ScalarFragment a
+    | ListLikeFragment [a]
+    deriving (Show, Functor, Foldable, Traversable)
+
+instance ToJSON a => ToJSON (Fragment a) where
+    toJSON (ScalarFragment j) = toJSON j
+    toJSON (ListLikeFragment js) = JsonArray $ map toJSON js
+    toJSONList vs = JsonArray $ flip foldMap vs $ \case
+        ScalarFragment j -> [toJSON j]
+        ListLikeFragment js -> map toJSON js
+
+type JsonFragment = Fragment Json
+
+scalarFragment :: FieldName -> Json -> (String, JsonFragment)
+scalarFragment fn v = (fromUTF8BS fn, ScalarFragment v)
+
+scalarFragment' :: String -> Json -> (String, JsonFragment)
+scalarFragment' fn v = (fn, ScalarFragment v)
+
+listlikeFragment :: FieldName -> [Json] -> (String, JsonFragment)
+listlikeFragment fn vs = (fromUTF8BS fn, ListLikeFragment vs)
+
+data CondJson = CondJson (Maybe (Condition ConfVar)) Json
+    deriving Show
+
+instance ToJSON CondJson where
+    toJSON (CondJson Nothing v) = v
+    toJSON (CondJson (Just c) v) = JsonObject ["_if" .= toJSON c, "_then" .= v]

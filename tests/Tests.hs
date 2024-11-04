@@ -12,11 +12,32 @@ goldenTests = do
     cabalfiles <- findByExtension [".cabal"] "tests/golden"
     return $
         testGroup
-            "YamlToJson golden tests"
-            [ goldenVsString
-                (takeBaseName cabalfile)
-                jsonFile
-                (toUTF8LBS <$> readProcess "cabal2json" [cabalfile] "")
-            | cabalfile <- cabalfiles
-            , let jsonFile = replaceExtension cabalfile ".json"
+            "golden tests"
+            [ testGroup
+                "simple"
+                [ goldenVsString
+                    (takeBaseName cabalfile)
+                    jsonFile
+                    (toUTF8LBS <$> readProcess "cabal2json" [cabalfile] "")
+                | cabalfile <- cabalfiles
+                , let jsonFile = replaceExtension cabalfile ".json"
+                ]
+            , testGroup
+                "flags"
+                [ goldenVsString
+                    (takeBaseName cabalfile)
+                    jsonFile
+                    (toUTF8LBS <$> readProcess "cabal2json" ["-f", "+os-string", cabalfile] "")
+                | cabalfile <- cabalfiles
+                , let jsonFile = replaceExtension cabalfile ".flag-os-string.json"
+                ]
+            , testGroup
+                "os"
+                [ goldenVsString
+                    (takeBaseName cabalfile)
+                    jsonFile
+                    (toUTF8LBS <$> readProcess "cabal2json" ["--os", "windows", cabalfile] "")
+                | cabalfile <- cabalfiles
+                , let jsonFile = replaceExtension cabalfile ".os-windows.json"
+                ]
             ]
