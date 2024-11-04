@@ -1,12 +1,15 @@
 {-# LANGUAGE CPP #-}
+
 module MonoidalMap where
 
+{- FOURMOLU_DISABLE -}
 import Data.List
     ( insertBy
 #if !MIN_VERSION_base(4, 20, 0)
     , foldl'
 #endif
     )
+{- FOURMOLU_ENABLE -}
 import Data.List.NonEmpty qualified as NE
 import Data.Ord (comparing)
 import Json (Json (..), ToJSON (..))

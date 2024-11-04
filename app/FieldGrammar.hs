@@ -1,6 +1,7 @@
 module FieldGrammar where
 
 import Data.Foldable (Foldable (..))
+import Data.Maybe (fromMaybe)
 import Distribution.CabalSpecVersion (CabalSpecVersion)
 import Distribution.Compat.Lens (ALens', aview)
 import Distribution.Compat.Newtype (Newtype, pack')
@@ -42,10 +43,7 @@ import Distribution.PackageDescription.FieldGrammar
     , unvalidateTestSuite
     )
 import Distribution.Utils.Generic (fromUTF8BS)
-import Distribution.Utils.Json
-    ( Json (..)
-    , (.=)
-    )
+import Distribution.Utils.Json (Json (..), (.=))
 import Distribution.Utils.ShortText qualified as ST
 import Json (Pair, ToJSON (..))
 import MonoidalMap (MonoidalMap (..))
@@ -66,12 +64,12 @@ instance ToJSON a => ToJSON (Value a) where
 
 type JsonValue = Value Json
 
-data CJson = CJson (Condition ConfVar) Json
+data CJson = CJson (Maybe (Condition ConfVar)) Json
     deriving Show
 
 instance ToJSON CJson where
-    toJSON (CJson (Lit True) v) = v
-    toJSON (CJson c v) = JsonObject ["_if" .= toJSON c, "_then" .= v]
+    toJSON (CJson Nothing v) = v
+    toJSON (CJson (Just c) v) = JsonObject ["_if" .= toJSON c, "_then" .= v]
 
 scalarField :: FieldName -> Json -> [(String, Value Json)]
 scalarField fn v = [(fromUTF8BS fn, ScalarValue v)]
@@ -118,15 +116,17 @@ jsonCondTree
     -> CondTree ConfVar c s
     -> FieldMap [Value CJson]
 jsonCondTree ver fg =
-    go (Lit True) . mapTreeData (MonoidalMap . jsonFieldGrammar ver fg)
+    go Nothing . mapTreeData (MonoidalMap . jsonFieldGrammar ver fg)
   where
-    go :: Condition ConfVar -> CondTree ConfVar c (FieldMap (Value Json)) -> FieldMap [Value CJson]
+    go :: Maybe (Condition ConfVar) -> CondTree ConfVar c (FieldMap (Value Json)) -> FieldMap [Value CJson]
     go c (CondNode it _ ifs) =
         fmap (traverse $ \j -> [CJson c j]) it <> foldMap (goBranch c) ifs
 
-    goBranch :: Condition ConfVar -> CondBranch ConfVar c (FieldMap (Value Json)) -> FieldMap [Value CJson]
-    goBranch c1 (CondBranch c2 thenTree elseTree) =
-        go (c1 `cAnd` c2) thenTree <> foldMap (go (c1 `cAnd` cNot c2)) elseTree
+    goBranch :: Maybe (Condition ConfVar) -> CondBranch ConfVar c (FieldMap (Value Json)) -> FieldMap [Value CJson]
+    goBranch mc (CondBranch c thenTree elseTree) =
+        go (Just (c' `cAnd` c)) thenTree <> foldMap (go (Just (c' `cAnd` cNot c))) elseTree
+      where
+        c' = fromMaybe (Lit True) mc
 
 jsonSourceRepos :: CabalSpecVersion -> [SourceRepo] -> Json
 jsonSourceRepos v = JsonArray . fmap (toJSON . MonoidalMap . jsonSourceRepo v)
