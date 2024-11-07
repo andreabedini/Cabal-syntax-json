@@ -16,7 +16,7 @@ executable cabal2json
                   , pretty
   other-modules:    Compat
                     CondTree
-                    FieldGrammar
+                    JsonFieldGrammar
                     Json
                     MonoidalMap
   hs-source-dirs:   app

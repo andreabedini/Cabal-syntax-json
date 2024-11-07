@@ -1,19 +1,17 @@
 {-# LANGUAGE RecordWildCards #-}
 
 import Compat
-import CondTree (mkEnv, simplifyGPD)
+import CondTree (jsonGenericPackageDescription, mkEnv, simplifyGPD)
 import Control.Monad (unless)
 import Data.ByteString.Lazy qualified as BL
 import Data.Either
 import Data.Foldable
 import Distribution.Compiler (CompilerId (..))
+import Distribution.PackageDescription hiding (foldCondTree, options)
 import Distribution.Parsec
 import Distribution.System
-import Distribution.Types.Flag
-import Distribution.Types.GenericPackageDescription.Lens ()
 import Distribution.Utils.Json
 import Distribution.Verbosity (normal)
-import FieldGrammar
 import System.Console.GetOpt
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -110,3 +108,17 @@ doOne Opts{..} fn = do
     let env = mkEnv optsOs optsArch optsCompiler optsFlags
         bs = renderJson $ jsonGenericPackageDescription $ simplifyGPD env gpd
     maybe BL.putStr BL.writeFile optsOutput bs
+
+-- let v = specVersion $ packageDescription gpd
+-- BL.putStr $
+--     foldMap
+--         ( renderJson
+--             . toJSON
+--             . foldCondTree
+--                 ( \c a ->
+--                     fmap (traverse $ \j -> [CondJson (Just c) j]) $
+--                         MonoidalMap $
+--                             jsonFieldGrammar v (libraryFieldGrammar LMainLibName) a
+--                 )
+--         )
+--         (condLibrary gpd)

@@ -2,33 +2,21 @@
 
 module MonoidalMap where
 
-{- FOURMOLU_DISABLE -}
-import Data.List
-    ( insertBy
-#if !MIN_VERSION_base(4, 20, 0)
-    , foldl'
-#endif
-    )
-{- FOURMOLU_ENABLE -}
-import Data.List.NonEmpty qualified as NE
-import Data.Ord (comparing)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Json (Json (..), ToJSON (..))
 
-newtype MonoidalMap k v = MonoidalMap {unMonoidalMap :: [(k, v)]}
+newtype MonoidalMap k v = MonoidalMap (Map k v)
     deriving (Show, Functor, Foldable, Traversable)
 
-instance (Ord k, Monoid v) => Semigroup (MonoidalMap k v) where
-    MonoidalMap lhs <> MonoidalMap rhs = MonoidalMap (merge lhs rhs)
+monoidalMap :: Ord k => [(k, v)] -> MonoidalMap k [v]
+monoidalMap = MonoidalMap . Map.fromListWith (<>) . map (fmap (: []))
 
-merge :: (Monoid b, Ord a) => [(a, b)] -> [(a, b)] -> [(a, b)]
-merge lhs rhs =
-    map (\ne -> (fst (NE.head ne), foldMap snd ne)) $
-        NE.groupWith fst $
-            foldl' (flip $ insertBy (comparing fst)) [] $
-                lhs ++ rhs
+instance (Ord k, Monoid v) => Semigroup (MonoidalMap k v) where
+    MonoidalMap lhs <> MonoidalMap rhs = MonoidalMap $ Map.unionWith (<>) lhs rhs
 
 instance (Ord k, Monoid v) => Monoid (MonoidalMap k v) where
     mempty = MonoidalMap mempty
 
 instance ToJSON v => ToJSON (MonoidalMap String v) where
-    toJSON (MonoidalMap m) = JsonObject [(k, toJSON v) | (k, v) <- m]
+    toJSON (MonoidalMap m) = JsonObject [(k, toJSON v) | (k, v) <- Map.toList m]

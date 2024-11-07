@@ -1,4 +1,4 @@
-module CondTree (mkEnv, simplifyGPD) where
+module CondTree where
 
 import Data.Either (partitionEithers)
 import Distribution.Compiler (CompilerId (..))
@@ -12,7 +12,177 @@ import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Version (nullVersion)
 import Distribution.Types.VersionRange (withinRange)
 
+import Data.Bifunctor (Bifunctor (..))
+import Data.Foldable (Foldable (..))
 import Data.Functor.Identity
+import Debug.Trace (traceShowId)
+import Distribution.CabalSpecVersion (CabalSpecVersion)
+import Distribution.Package (Package (..))
+import Distribution.PackageDescription
+    ( LibraryName (..)
+    , PackageDescription (..)
+    , PackageFlag (..)
+    , PackageIdentifier (..)
+    , SetupBuildInfo
+    , SourceRepo (..)
+    , cAnd
+    , cNot
+    , libraryNameString
+    , mapTreeData
+    , unFlagName
+    , unPackageName
+    , unUnqualComponentName
+    )
+import Distribution.PackageDescription.FieldGrammar
+    ( benchmarkFieldGrammar
+    , executableFieldGrammar
+    , flagFieldGrammar
+    , foreignLibFieldGrammar
+    , libraryFieldGrammar
+    , packageDescriptionFieldGrammar
+    , setupBInfoFieldGrammar
+    , sourceRepoFieldGrammar
+    , testSuiteFieldGrammar
+    , unvalidateBenchmark
+    , unvalidateTestSuite
+    )
+import Distribution.Pretty (prettyShow)
+import Distribution.Utils.Json (Json (..), (.=))
+import Json (ToJSON (..))
+import JsonFieldGrammar
+import MonoidalMap
+
+jsonGenericPackageDescription :: GenericPackageDescription -> Json
+jsonGenericPackageDescription gpd =
+    JsonObject $
+        concat
+            [ map (second toJSON) $ jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
+            , [ "source-repos" .= toJSON (map (jsonSourceRepo v) repos)
+              | let repos = sourceRepos (packageDescription gpd)
+              , not (null repos)
+              ]
+            , [ "custom-setup" .= jsonCustomSetup v sbi
+              | sbi <- toList (setupBuildInfo (packageDescription gpd))
+              ]
+            , [ "flags" .= JsonObject [unFlagName (flagName flag) .= jsonFlag v flag | flag <- flags]
+              | let flags = genPackageFlags gpd
+              , not (null flags)
+              ]
+            , [ "libraries"
+                    .= JsonObject
+                        [ (libraryName ln, toJSON (jsonCondTree v (libraryFieldGrammar ln) l))
+                        | (ln, l) <- libraries
+                        ]
+              | not (null libraries)
+              ]
+            , [ "foreign-libraries"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v (foreignLibFieldGrammar ucn) c)
+                        | (ucn, c) <- flibs
+                        ]
+              | let flibs = condForeignLibs gpd
+              , not (null flibs)
+              ]
+            , [ "executables"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v (executableFieldGrammar ucn) c)
+                        | (ucn, c) <- exes
+                        ]
+              | let exes = condExecutables gpd
+              , not (null exes)
+              ]
+            , [ "test-suites"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v testSuiteFieldGrammar c)
+                        | (ucn, c) <- testSuites
+                        ]
+              | not (null testSuites)
+              ]
+            , [ "benchmarks"
+                    .= JsonObject
+                        [ prettyShow ucn .= toJSON (jsonCondTree v benchmarkFieldGrammar c)
+                        | (ucn, c) <- benchmarks
+                        ]
+              | not (null benchmarks)
+              ]
+            ]
+  where
+    v = specVersion $ packageDescription gpd
+    pn = pkgName $ packageId $ packageDescription gpd
+    libraryName = maybe (unPackageName pn) unUnqualComponentName . libraryNameString
+    libraries =
+        mconcat
+            [ [(LMainLibName, l) | l <- toList (condLibrary gpd)]
+            , [(LSubLibName ucn, l) | (ucn, l) <- condSubLibraries gpd]
+            ]
+    testSuites = map (fmap (mapTreeData unvalidateTestSuite)) $ condTestSuites gpd
+    benchmarks = map (fmap (mapTreeData unvalidateBenchmark)) $ condBenchmarks gpd
+
+jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> Json
+jsonSourceRepo v repo =
+    JsonObject
+        . map (second toJSON)
+        $ jsonFieldGrammar v (sourceRepoFieldGrammar (repoKind repo)) repo
+
+jsonCustomSetup :: CabalSpecVersion -> SetupBuildInfo -> Json
+jsonCustomSetup v =
+    JsonObject
+        . map (second toJSON)
+        . jsonFieldGrammar v (setupBInfoFieldGrammar False)
+
+jsonFlag :: CabalSpecVersion -> PackageFlag -> Json
+jsonFlag v flag =
+    JsonObject
+        . map (second toJSON)
+        $ jsonFieldGrammar v (flagFieldGrammar (flagName flag)) flag
+
+type FieldMap a = MonoidalMap String a
+
+data Cond a = Cond (Condition ConfVar) a
+    deriving Show
+
+instance ToJSON a => ToJSON (Cond a) where
+    toJSON (Cond (Lit True) v) = toJSON v
+    toJSON (Cond c v) = JsonObject ["_if" .= toJSON c, "_then" .= toJSON v]
+
+-- jsonCondTree
+--     :: CabalSpecVersion
+--     -> JSONFieldGrammar a a
+--     -> CondTree ConfVar c a
+--     -> FieldMap [Fragment CondJson]
+-- jsonCondTree v fg = go (Lit True) . mapTreeData (monoidalMap . jsonFieldGrammar v fg)
+-- where
+--   go :: Condition ConfVar -> CondTree ConfVar c (FieldMap JsonFragment) -> FieldMap [Fragment CondJson]
+--   go c (CondNode it _ ifs) =
+--       fmap (traverse (pure . CondJson c)) it <> foldMap (goBranch c) ifs
+
+--   goBranch c (CondBranch c' thenTree elseTree) =
+--       go (c `cAnd` c') thenTree <> foldMap (go (c `cAnd` cNot c')) elseTree
+jsonCondTree
+    :: CabalSpecVersion
+    -> JSONFieldGrammar s s
+    -> CondTree ConfVar c s
+    -> FieldMap [Fragment (Cond Json)]
+jsonCondTree v fg = traceShowId . x v fg
+
+foldCondTree
+    :: Monoid b
+    => (Condition v -> a -> b)
+    -> CondTree v c a
+    -> b
+foldCondTree f = go (Lit True)
+  where
+    go c (CondNode a _ ifs) =
+        f c a <> foldMap (goBranch c) ifs
+    goBranch c (CondBranch c' thenTree elseTree) =
+        go (c `cAnd` c') thenTree <> foldMap (go (c `cAnd` cNot c')) elseTree
+
+x :: CabalSpecVersion -> JSONFieldGrammar s s -> CondTree ConfVar c s -> FieldMap [Fragment (Cond Json)]
+x v fg =
+    foldCondTree $ \c ->
+        (fmap . fmap . fmap) (Cond c)
+            . monoidalMap
+            . jsonFieldGrammar v fg
 
 simplifyGPD :: (ConfVar -> Either ConfVar Bool) -> GenericPackageDescription -> GenericPackageDescription
 simplifyGPD env = runIdentity . allCondTrees (Identity . simplifyCondTree env)
