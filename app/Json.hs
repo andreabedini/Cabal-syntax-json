@@ -9,8 +9,10 @@ module Json
 where
 
 import Compat
+import Data.Foldable (Foldable (..))
 import Data.Functor.Identity
 import Data.Kind
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Distribution.Compat.Newtype
@@ -202,6 +204,9 @@ instance ToJSON Bool where
 
 instance ToJSON a => ToJSON [a] where
     toJSON = toJSONList
+
+instance ToJSON a => ToJSON (NonEmpty a) where
+    toJSON = toJSONList . toList
 
 instance (ToJSON a, ToJSON b) => ToJSON (a, b) where
     toJSON (a, b) = JsonArray [toJSON a, toJSON b]

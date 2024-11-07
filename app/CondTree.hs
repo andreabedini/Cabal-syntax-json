@@ -12,10 +12,10 @@ import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Version (nullVersion)
 import Distribution.Types.VersionRange (withinRange)
 
-import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable (Foldable (..))
-import Data.Functor.Identity
-import Debug.Trace (traceShowId)
+import Data.Foldable1 (Foldable1 (..))
+import Data.Functor.Identity (Identity (..))
+import Data.List.NonEmpty qualified as NE
 import Distribution.CabalSpecVersion (CabalSpecVersion)
 import Distribution.Package (Package (..))
 import Distribution.PackageDescription
@@ -56,7 +56,7 @@ jsonGenericPackageDescription :: GenericPackageDescription -> Json
 jsonGenericPackageDescription gpd =
     JsonObject $
         concat
-            [ map (second toJSON) $ jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
+            [ map (fmap toJSON) $ jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
             , [ "source-repos" .= toJSON (map (jsonSourceRepo v) repos)
               | let repos = sourceRepos (packageDescription gpd)
               , not (null repos)
@@ -121,68 +121,52 @@ jsonGenericPackageDescription gpd =
 jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> Json
 jsonSourceRepo v repo =
     JsonObject
-        . map (second toJSON)
+        . map (fmap toJSON)
         $ jsonFieldGrammar v (sourceRepoFieldGrammar (repoKind repo)) repo
 
 jsonCustomSetup :: CabalSpecVersion -> SetupBuildInfo -> Json
 jsonCustomSetup v =
     JsonObject
-        . map (second toJSON)
+        . map (fmap toJSON)
         . jsonFieldGrammar v (setupBInfoFieldGrammar False)
 
 jsonFlag :: CabalSpecVersion -> PackageFlag -> Json
 jsonFlag v flag =
     JsonObject
-        . map (second toJSON)
+        . map (fmap toJSON)
         $ jsonFieldGrammar v (flagFieldGrammar (flagName flag)) flag
 
-type FieldMap a = MonoidalMap String a
-
-data Cond a = Cond (Condition ConfVar) a
+data Cond v a = Cond (Condition v) a
     deriving Show
 
-instance ToJSON a => ToJSON (Cond a) where
+instance (ToJSON a, ToJSON v) => ToJSON (Cond v a) where
     toJSON (Cond (Lit True) v) = toJSON v
     toJSON (Cond c v) = JsonObject ["_if" .= toJSON c, "_then" .= toJSON v]
 
--- jsonCondTree
---     :: CabalSpecVersion
---     -> JSONFieldGrammar a a
---     -> CondTree ConfVar c a
---     -> FieldMap [Fragment CondJson]
--- jsonCondTree v fg = go (Lit True) . mapTreeData (monoidalMap . jsonFieldGrammar v fg)
--- where
---   go :: Condition ConfVar -> CondTree ConfVar c (FieldMap JsonFragment) -> FieldMap [Fragment CondJson]
---   go c (CondNode it _ ifs) =
---       fmap (traverse (pure . CondJson c)) it <> foldMap (goBranch c) ifs
-
---   goBranch c (CondBranch c' thenTree elseTree) =
---       go (c `cAnd` c') thenTree <> foldMap (go (c `cAnd` cNot c')) elseTree
 jsonCondTree
     :: CabalSpecVersion
-    -> JSONFieldGrammar s s
-    -> CondTree ConfVar c s
-    -> FieldMap [Fragment (Cond Json)]
-jsonCondTree v fg = traceShowId . x v fg
+    -> JSONFieldGrammar s a
+    -> CondTree v c s
+    -> MonoidalMap String (Fragment (Cond v Json))
+jsonCondTree v fg =
+    monoidalMap'
+        . foldCondTree (\c -> (fmap . fmap . fmap) (Cond c) . jsonFieldGrammar v fg)
 
 foldCondTree
-    :: Monoid b
+    :: Semigroup b
     => (Condition v -> a -> b)
     -> CondTree v c a
     -> b
 foldCondTree f = go (Lit True)
   where
-    go c (CondNode a _ ifs) =
-        f c a <> foldMap (goBranch c) ifs
-    goBranch c (CondBranch c' thenTree elseTree) =
-        go (c `cAnd` c') thenTree <> foldMap (go (c `cAnd` cNot c')) elseTree
-
-x :: CabalSpecVersion -> JSONFieldGrammar s s -> CondTree ConfVar c s -> FieldMap [Fragment (Cond Json)]
-x v fg =
-    foldCondTree $ \c ->
-        (fmap . fmap . fmap) (Cond c)
-            . monoidalMap
-            . jsonFieldGrammar v fg
+    go c (CondNode a _ []) =
+        f c a
+    go c (CondNode a _ (x : xs)) =
+        f c a <> foldMap1 (goBranch c) (x NE.:| xs)
+    goBranch c (CondBranch c' thenTree Nothing) =
+        go (c `cAnd` c') thenTree
+    goBranch c (CondBranch c' thenTree (Just elseTree)) =
+        go (c `cAnd` c') thenTree <> go (c `cAnd` cNot c') elseTree
 
 simplifyGPD :: (ConfVar -> Either ConfVar Bool) -> GenericPackageDescription -> GenericPackageDescription
 simplifyGPD env = runIdentity . allCondTrees (Identity . simplifyCondTree env)
