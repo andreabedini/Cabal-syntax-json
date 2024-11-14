@@ -1,29 +1,28 @@
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RecordWildCards #-}
 
 import Compat
-import CondTree (Cond (..), mkEnv, simplifyGPD, test'V)
+import CondTree (Cond (..), flattenCondTree, mkEnv, pushConditionals, simplifyGPD)
 import Control.Monad (unless)
 import Data.Bifunctor (Bifunctor (..))
+import Data.ByteString.Lazy qualified as BL
 import Data.Either
 import Data.Foldable
-import Data.Foldable1 (Foldable1 (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
+import Data.Semigroup (Semigroup (..))
 import Distribution.Compiler (CompilerId (..))
 import Distribution.PackageDescription hiding (foldCondTree, options)
 import Distribution.Parsec
 import Distribution.System
 import Distribution.Utils.Json
 import Distribution.Verbosity (normal)
-import GenericPackageDescription (Grouped, runGenericPackageDescription)
+import GenericPackageDescription (Grouped (..), runGenericPackageDescription)
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
 import MonoidalMap (FieldMap)
 import System.Console.GetOpt
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
-import Text.Pretty.Simple (pPrint)
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -57,7 +56,10 @@ options =
     , Option
         "f"
         ["flag"]
-        (ReqArg (either Left (\flags -> Right (\opts -> opts{optsFlags = optsFlags opts <> flags})) . eitherParsec) "FLAG")
+        ( ReqArg
+            (either Left (\flags -> Right (\opts -> opts{optsFlags = optsFlags opts <> flags})) . eitherParsec)
+            "FLAG"
+        )
         "Flags"
     , Option
         "c"
@@ -117,12 +119,14 @@ doOne Opts{..} fn = do
     gpd <- simplifyGPD env <$> readGenericPackageDescription normal Nothing (makeSymbolicPath fn)
 
     let v = specVersion (packageDescription gpd)
+        top :: FieldMap (Fragment Json)
         x
             :: [ Grouped
                     (FieldMap (Fragment Json))
                     (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
                ]
-        x = runGenericPackageDescription v gpd
+
+        (top, x) = runGenericPackageDescription v gpd
 
     let x'
             :: [ Grouped
@@ -130,48 +134,48 @@ doOne Opts{..} fn = do
                     ( CondTree
                         ConfVar
                         [Dependency]
-                        (FieldMap [Fragment Json])
+                        (FieldMap (NonEmpty (Fragment Json)))
                     )
                ]
-        x' = fmap (second (mapTreeData (fmap pure))) x
+        x' = fmap (second (mapTreeData (fmap NE.singleton))) x
 
     let y
             :: [ Grouped
                     (FieldMap (Fragment Json))
-                    (FieldMap (CondTree ConfVar [Dependency] [Fragment Json]))
+                    (FieldMap (CondTree ConfVar [Dependency] (NonEmpty (Fragment Json))))
                ]
-        y = fmap (second test'V) x'
+        y = fmap (second pushConditionals) x'
 
     -- NOTE: This is the step I do *not* want to make
     -- y' :: [Grouped (FieldMap (Fragment Json)) (FieldMap [Fragment (Cond ConfVar Json)])]
     -- y' = fmap (second (fmap (foldCondTree (\c -> fmap (fmap (Cond c)))))) y
 
-    -- NOTE: now I want to flatten the CondTree
-    let y'
+    let y''
             :: [ Grouped
                     (FieldMap (Fragment Json))
-                    (FieldMap (Cond ConfVar [Fragment Json]))
+                    (FieldMap (Fragment Json))
                ]
-        y' = fmap (second (fmap flatten)) y
+        y'' = fmap (second (fmap (defragC . fmap sconcat . flattenCondTree))) y
 
-    pPrint y'
+        y''' :: [Grouped Json Json]
+        y''' = fmap (bimap toJSON toJSON) y''
 
-flatten :: CondTree v c a -> Cond v a
-flatten (CondNode a _ ifs) =
-    Cond a (foldMap (goBranch (Lit True)) ifs)
-  where
-    go c (CondNode a' _ ifs') =
-        (c, a') : foldMap (goBranch c) ifs'
-    goBranch c (CondBranch c' thenTree Nothing) =
-        go (c `cAnd` c') thenTree
-    goBranch c (CondBranch c' thenTree (Just elseTree)) =
-        go (c `cAnd` c') thenTree <> go (c `cAnd` cNot c') elseTree
+    maybe BL.putStr BL.writeFile optsOutput $ renderJson $ toJSON y''
 
--- pPrint $ toJSON y
+jsonCond :: ToJSON a => (a, Fragment Json) -> Json
+jsonCond (a, b) = JsonObject ["_if" .= toJSON a, "_then" .= toJSON b]
 
--- let bs = renderJson $ _ x
+defragC :: Cond ConfVar (Fragment Json) -> Fragment Json
+defragC (Cond (ScalarFragment a) cs) =
+    case NE.nonEmpty cs of
+        Nothing -> ScalarFragment a
+        Just cs' -> ListLikeFragment (a `NE.cons` NE.map jsonCond cs')
+defragC (Cond (ListLikeFragment as) cs) =
+    case NE.nonEmpty cs of
+        Nothing -> ListLikeFragment as
+        Just cs' -> ListLikeFragment (as <> NE.map jsonCond cs')
 
--- maybe BL.putStr BL.writeFile optsOutput bs
-
-defrag :: [Fragment a] -> Fragment a
-defrag = _
+-- bifoldG :: ToJSON a => Grouped a a -> [(String, Json)]
+-- bifoldG (Entry n a) = [(n, toJSON a)]
+-- bifoldG (EntryC n a) = [(n, toJSON a)]
+-- bifoldG (Group n gs) = [(n, JsonObject $ foldMap bifoldG gs)]

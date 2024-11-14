@@ -2,7 +2,7 @@
 indentation: 4
 
 # Max line length for automatic line breaking
-column-limit: none
+column-limit: 100
 
 # Styling of arrows in type signatures (choices: trailing, leading, or leading-args)
 function-arrows: leading
@@ -23,7 +23,7 @@ record-brace-space: false
 newlines-between-decls: 1
 
 # How to print Haddock comments (choices: single-line, multi-line, or multi-line-compact)
-haddock-style: multi-line
+haddock-style: single-line
 
 # How to print module docstring
 haddock-style-module: null

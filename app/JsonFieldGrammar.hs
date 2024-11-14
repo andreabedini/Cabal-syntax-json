@@ -11,7 +11,7 @@ import Distribution.FieldGrammar
     )
 import Distribution.Fields (FieldName)
 import Distribution.Utils.Generic (fromUTF8BS)
-import Distribution.Utils.Json (Json (..))
+import Distribution.Utils.Json (Json (..), (.=))
 import Distribution.Utils.ShortText qualified as ST
 import Json (ToJSON (..))
 import MonoidalMap (FieldMap, singleton)
@@ -167,14 +167,6 @@ instance Semigroup (Fragment a) where
 instance ToJSON a => ToJSON (Fragment a) where
     toJSON (ScalarFragment j) = toJSON j
     toJSON (ListLikeFragment js) = toJSON js
-    toJSONList =
-        JsonArray
-            . ( foldMap $ \case
-                    ScalarFragment j -> [toJSON j]
-                    ListLikeFragment js -> NE.toList (NE.map toJSON js)
-              )
-
-type JsonFragment = Fragment Json
 
 scalarFragment :: FieldName -> a -> FieldMap (Fragment a)
 scalarFragment fn v = singleton (fromUTF8BS fn) (ScalarFragment v)
