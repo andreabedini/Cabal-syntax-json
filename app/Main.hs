@@ -1,20 +1,29 @@
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RecordWildCards #-}
 
 import Compat
-import CondTree (jsonGenericPackageDescription, mkEnv, simplifyGPD)
+import CondTree (Cond (..), mkEnv, simplifyGPD, test'V)
 import Control.Monad (unless)
-import Data.ByteString.Lazy qualified as BL
+import Data.Bifunctor (Bifunctor (..))
 import Data.Either
 import Data.Foldable
+import Data.Foldable1 (Foldable1 (..))
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Distribution.Compiler (CompilerId (..))
 import Distribution.PackageDescription hiding (foldCondTree, options)
 import Distribution.Parsec
 import Distribution.System
 import Distribution.Utils.Json
 import Distribution.Verbosity (normal)
+import GenericPackageDescription (Grouped, runGenericPackageDescription)
+import Json (ToJSON (..))
+import JsonFieldGrammar (Fragment (..))
+import MonoidalMap (FieldMap)
 import System.Console.GetOpt
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
+import Text.Pretty.Simple (pPrint)
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -104,21 +113,65 @@ main = do
 
 doOne :: Opts -> FilePath -> IO ()
 doOne Opts{..} fn = do
-    gpd <- readGenericPackageDescription normal Nothing (makeSymbolicPath fn)
     let env = mkEnv optsOs optsArch optsCompiler optsFlags
-        bs = renderJson $ jsonGenericPackageDescription $ simplifyGPD env gpd
-    maybe BL.putStr BL.writeFile optsOutput bs
+    gpd <- simplifyGPD env <$> readGenericPackageDescription normal Nothing (makeSymbolicPath fn)
 
--- let v = specVersion $ packageDescription gpd
--- BL.putStr $
---     foldMap
---         ( renderJson
---             . toJSON
---             . foldCondTree
---                 ( \c a ->
---                     fmap (traverse $ \j -> [CondJson (Just c) j]) $
---                         MonoidalMap $
---                             jsonFieldGrammar v (libraryFieldGrammar LMainLibName) a
---                 )
---         )
---         (condLibrary gpd)
+    let v = specVersion (packageDescription gpd)
+        x
+            :: [ Grouped
+                    (FieldMap (Fragment Json))
+                    (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
+               ]
+        x = runGenericPackageDescription v gpd
+
+    let x'
+            :: [ Grouped
+                    (FieldMap (Fragment Json))
+                    ( CondTree
+                        ConfVar
+                        [Dependency]
+                        (FieldMap [Fragment Json])
+                    )
+               ]
+        x' = fmap (second (mapTreeData (fmap pure))) x
+
+    let y
+            :: [ Grouped
+                    (FieldMap (Fragment Json))
+                    (FieldMap (CondTree ConfVar [Dependency] [Fragment Json]))
+               ]
+        y = fmap (second test'V) x'
+
+    -- NOTE: This is the step I do *not* want to make
+    -- y' :: [Grouped (FieldMap (Fragment Json)) (FieldMap [Fragment (Cond ConfVar Json)])]
+    -- y' = fmap (second (fmap (foldCondTree (\c -> fmap (fmap (Cond c)))))) y
+
+    -- NOTE: now I want to flatten the CondTree
+    let y'
+            :: [ Grouped
+                    (FieldMap (Fragment Json))
+                    (FieldMap (Cond ConfVar [Fragment Json]))
+               ]
+        y' = fmap (second (fmap flatten)) y
+
+    pPrint y'
+
+flatten :: CondTree v c a -> Cond v a
+flatten (CondNode a _ ifs) =
+    Cond a (foldMap (goBranch (Lit True)) ifs)
+  where
+    go c (CondNode a' _ ifs') =
+        (c, a') : foldMap (goBranch c) ifs'
+    goBranch c (CondBranch c' thenTree Nothing) =
+        go (c `cAnd` c') thenTree
+    goBranch c (CondBranch c' thenTree (Just elseTree)) =
+        go (c `cAnd` c') thenTree <> go (c `cAnd` cNot c') elseTree
+
+-- pPrint $ toJSON y
+
+-- let bs = renderJson $ _ x
+
+-- maybe BL.putStr BL.writeFile optsOutput bs
+
+defrag :: [Fragment a] -> Fragment a
+defrag = _

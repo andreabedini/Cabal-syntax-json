@@ -13,11 +13,14 @@ executable cabal2json
                   , containers
                   , Cabal        ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
                   , Cabal-syntax ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
-                  , pretty
+                  , semialign
+                  , pretty-simple
+                  , these
   other-modules:    Compat
                     CondTree
-                    JsonFieldGrammar
+                    GenericPackageDescription
                     Json
+                    JsonFieldGrammar
                     MonoidalMap
   hs-source-dirs:   app
   default-language: GHC2021

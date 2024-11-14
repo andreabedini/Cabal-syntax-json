@@ -1,7 +1,9 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DerivingVia #-}
 
 module MonoidalMap where
 
+import Data.Align
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Json (Json (..), ToJSON (..))
@@ -31,3 +33,6 @@ instance (Ord k, Semigroup v) => Monoid (MonoidalMap k v) where
 
 instance ToJSON v => ToJSON (MonoidalMap String v) where
     toJSON (MonoidalMap m) = JsonObject [(k, toJSON v) | (k, v) <- Map.toList m]
+
+deriving via Map k instance Ord k => Semialign (MonoidalMap k)
+deriving via Map k instance Ord k => Align (MonoidalMap k)

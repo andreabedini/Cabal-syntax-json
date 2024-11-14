@@ -1,5 +1,7 @@
 module JsonFieldGrammar where
 
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Distribution.CabalSpecVersion (CabalSpecVersion)
 import Distribution.Compat.Lens (ALens', aview)
 import Distribution.Compat.Newtype (Newtype, pack')
@@ -12,18 +14,19 @@ import Distribution.Utils.Generic (fromUTF8BS)
 import Distribution.Utils.Json (Json (..))
 import Distribution.Utils.ShortText qualified as ST
 import Json (ToJSON (..))
+import MonoidalMap (FieldMap, singleton)
 
 --
 -- FieldGrammar stuff
 --
 
 newtype JSONFieldGrammar s a = JsonFG
-    { fieldGrammarJSON :: CabalSpecVersion -> s -> [(String, JsonFragment)]
+    { runJsonFieldGrammar :: CabalSpecVersion -> s -> FieldMap (Fragment Json)
     }
     deriving Functor
 
-jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> [(String, JsonFragment)]
-jsonFieldGrammar v fg = fieldGrammarJSON fg v
+jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> FieldMap (Fragment Json)
+jsonFieldGrammar v fg = runJsonFieldGrammar fg v
 
 instance Applicative (JSONFieldGrammar s) where
     pure _ = JsonFG (\_ _ -> mempty)
@@ -110,59 +113,74 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> JSONFieldGrammar s a
     monoidalFieldAla fn _pack l = JsonFG $ \_ s ->
         case toJSON (pack' _pack $ aview l s) of
-            JsonArray [] -> mempty
-            JsonArray js -> listlikeFragment fn js
-            j -> listlikeFragment fn [j]
+            JsonArray js -> foldMap (listlikeFragment fn) (NE.nonEmpty js)
+            j -> listlikeFragment fn (NE.singleton j)
 
     prefixedFields
         :: FieldName
         -> ALens' s [(String, String)]
         -> JSONFieldGrammar s [(String, String)]
-    prefixedFields _fnPfx l = JsonFG $ \_ ->
-        foldMap (\(n, v) -> scalarFragment' n (JsonString v)) . aview l
+    prefixedFields fnPfx l = JsonFG $ \_ kv ->
+        mconcat [scalarFragment' (fromUTF8BS fnPfx ++ fn) (JsonString s) | (fn, s) <- aview l kv]
 
-    knownField
-        :: FieldName
-        -> JSONFieldGrammar s ()
-    knownField _ = pure ()
+    knownField :: FieldName -> JSONFieldGrammar s ()
+    knownField _fn =
+        pure ()
 
     deprecatedSince
         :: CabalSpecVersion
         -> String
         -> JSONFieldGrammar s a
         -> JSONFieldGrammar s a
-    deprecatedSince _ _ x = x
+    deprecatedSince _v _fn fg = fg
 
-    -- TODO: as PrettyFieldGrammar isn't aware of cabal-version: we output the field
-    -- this doesn't affect roundtrip as `removedIn` fields cannot be parsed
-    -- so invalid documents can be only manually constructed.
-    removedIn _ _ x = x
+    hiddenField
+        :: JSONFieldGrammar s a
+        -> JSONFieldGrammar s a
+    hiddenField fg = fg
 
-    availableSince _ _ = id
-    hiddenField _ = JsonFG (const mempty)
+    removedIn
+        :: CabalSpecVersion
+        -> String
+        -> JSONFieldGrammar s a
+        -> JSONFieldGrammar s a
+    removedIn _v _fn fg = fg
+
+    availableSince
+        :: CabalSpecVersion
+        -> a
+        -> JSONFieldGrammar s a
+        -> JSONFieldGrammar s a
+    availableSince _v _a fg = fg
 
 data Fragment a
     = ScalarFragment a
-    | ListLikeFragment [a]
+    | ListLikeFragment (NonEmpty a)
     deriving (Show, Functor, Foldable, Traversable)
 
 instance Semigroup (Fragment a) where
-    ScalarFragment a <> ScalarFragment b = ListLikeFragment [a, b]
-    ScalarFragment a <> ListLikeFragment bs = ListLikeFragment (a : bs)
-    ListLikeFragment as <> ScalarFragment b = ListLikeFragment (as <> [b])
+    ScalarFragment a <> ScalarFragment b = ListLikeFragment (a :| [b])
+    ScalarFragment a <> ListLikeFragment bs = ListLikeFragment (NE.singleton a <> bs)
+    ListLikeFragment as <> ScalarFragment b = ListLikeFragment (as <> NE.singleton b)
     ListLikeFragment as <> ListLikeFragment bs = ListLikeFragment (as <> bs)
 
 instance ToJSON a => ToJSON (Fragment a) where
     toJSON (ScalarFragment j) = toJSON j
     toJSON (ListLikeFragment js) = toJSON js
+    toJSONList =
+        JsonArray
+            . ( foldMap $ \case
+                    ScalarFragment j -> [toJSON j]
+                    ListLikeFragment js -> NE.toList (NE.map toJSON js)
+              )
 
 type JsonFragment = Fragment Json
 
-scalarFragment :: FieldName -> a -> [(String, Fragment a)]
-scalarFragment fn v = [(fromUTF8BS fn, ScalarFragment v)]
+scalarFragment :: FieldName -> a -> FieldMap (Fragment a)
+scalarFragment fn v = singleton (fromUTF8BS fn) (ScalarFragment v)
 
-scalarFragment' :: String -> a -> [(String, Fragment a)]
-scalarFragment' fn v = [(fn, ScalarFragment v)]
+scalarFragment' :: String -> a -> FieldMap (Fragment a)
+scalarFragment' fn v = singleton fn (ScalarFragment v)
 
-listlikeFragment :: FieldName -> [a] -> [(String, Fragment a)]
-listlikeFragment fn vs = [(fromUTF8BS fn, ListLikeFragment vs)]
+listlikeFragment :: FieldName -> NonEmpty a -> FieldMap (Fragment a)
+listlikeFragment fn vs = singleton (fromUTF8BS fn) (ListLikeFragment vs)
