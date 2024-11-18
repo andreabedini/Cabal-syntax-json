@@ -11,10 +11,10 @@ import Distribution.FieldGrammar
     )
 import Distribution.Fields (FieldName)
 import Distribution.Utils.Generic (fromUTF8BS)
-import Distribution.Utils.Json (Json (..), (.=))
+import Distribution.Utils.Json (Json (..))
 import Distribution.Utils.ShortText qualified as ST
+import FieldMap (FieldMap, singleton)
 import Json (ToJSON (..))
-import MonoidalMap (FieldMap, singleton)
 
 --
 -- FieldGrammar stuff

@@ -1,9 +1,10 @@
 {-# LANGUAGE DerivingVia #-}
 
-module MonoidalMap
+module FieldMap
     ( FieldMap
     , singleton
     , toList
+    , fromList
     ) where
 
 import Data.Align
@@ -19,6 +20,9 @@ singleton k v = FieldMap (Map.singleton k v)
 
 toList :: FieldMap v -> [(String, v)]
 toList (FieldMap m) = Map.toList m
+
+fromList :: Semigroup v => [(String, v)] -> FieldMap v
+fromList = FieldMap . Map.fromListWith (<>)
 
 instance Semigroup v => Semigroup (FieldMap v) where
     FieldMap lhs <> FieldMap rhs = FieldMap $ Map.unionWith (<>) lhs rhs

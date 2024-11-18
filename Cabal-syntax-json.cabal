@@ -18,10 +18,10 @@ executable cabal2json
                   , these
   other-modules:    Compat
                     CondTree
+                    FieldMap
                     GenericPackageDescription
                     Json
                     JsonFieldGrammar
-                    MonoidalMap
   hs-source-dirs:   app
   default-language: GHC2021
   default-extensions: LambdaCase
