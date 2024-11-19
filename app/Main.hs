@@ -3,7 +3,6 @@
 import Compat
 import CondTree (Cond (..), flattenCondTree, mkEnv, pushConditionals, simplifyGPD)
 import Control.Monad (unless)
-import Data.Bifunctor (Bifunctor (..))
 import Data.ByteString.Lazy qualified as BL
 import Data.Either
 import Data.Foldable
@@ -16,10 +15,10 @@ import Distribution.Parsec
 import Distribution.System
 import Distribution.Utils.Json
 import Distribution.Verbosity (normal)
+import FieldMap (FieldMap)
 import GenericPackageDescription (Grouped (..), runGenericPackageDescription)
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
-import MonoidalMap (FieldMap)
 import System.Console.GetOpt
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -119,48 +118,26 @@ doOne Opts{..} fn = do
     gpd <- simplifyGPD env <$> readGenericPackageDescription normal Nothing (makeSymbolicPath fn)
 
     let v = specVersion (packageDescription gpd)
-        top :: FieldMap (Fragment Json)
-        x
-            :: [ Grouped
-                    (FieldMap (Fragment Json))
-                    (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
-               ]
+        x :: [Grouped (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))]
+        x = runGenericPackageDescription v gpd
 
-        (top, x) = runGenericPackageDescription v gpd
+    let x' :: [Grouped (CondTree ConfVar [Dependency] (FieldMap (NonEmpty (Fragment Json))))]
+        x' = fmap (fmap $ mapTreeData (fmap NE.singleton)) x
 
-    let x'
-            :: [ Grouped
-                    (FieldMap (Fragment Json))
-                    ( CondTree
-                        ConfVar
-                        [Dependency]
-                        (FieldMap (NonEmpty (Fragment Json)))
-                    )
-               ]
-        x' = fmap (second (mapTreeData (fmap NE.singleton))) x
+    let -- y :: [Grouped (FieldMap (CondTree ConfVar [Dependency] (NonEmpty (Fragment Json))))]
+        y :: [Grouped (FieldMap (CondTree ConfVar [Dependency] (Fragment Json)))]
+        y = fmap (fmap pushConditionals) x
 
-    let y
-            :: [ Grouped
-                    (FieldMap (Fragment Json))
-                    (FieldMap (CondTree ConfVar [Dependency] (NonEmpty (Fragment Json))))
-               ]
-        y = fmap (second pushConditionals) x'
+    -- print y
+    -- -- NOTE: This is the step I do *not* want to make
+    -- -- y' :: [Grouped (FieldMap (Fragment Json)) (FieldMap [Fragment (Cond ConfVar Json)])]
+    -- -- y' = fmap (second (fmap (foldCondTree (\c -> fmap (fmap (Cond c)))))) y
 
-    -- NOTE: This is the step I do *not* want to make
-    -- y' :: [Grouped (FieldMap (Fragment Json)) (FieldMap [Fragment (Cond ConfVar Json)])]
-    -- y' = fmap (second (fmap (foldCondTree (\c -> fmap (fmap (Cond c)))))) y
-
-    let y''
-            :: [ Grouped
-                    (FieldMap (Fragment Json))
-                    (FieldMap (Fragment Json))
-               ]
-        y'' = fmap (second (fmap (defragC . fmap sconcat . flattenCondTree))) y
-
-        y''' :: [Grouped Json Json]
-        y''' = fmap (bimap toJSON toJSON) y''
-
+    let y'' :: [Grouped (FieldMap (Fragment Json))]
+        y'' = fmap (fmap (fmap (defragC . flattenCondTree))) y
+        
     maybe BL.putStr BL.writeFile optsOutput $ renderJson $ toJSON y''
+
 
 jsonCond :: ToJSON a => (a, Fragment Json) -> Json
 jsonCond (a, b) = JsonObject ["_if" .= toJSON a, "_then" .= toJSON b]
