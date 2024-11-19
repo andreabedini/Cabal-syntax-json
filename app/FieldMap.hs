@@ -5,12 +5,18 @@ module FieldMap
     , singleton
     , toList
     , fromList
+    , empty
+    , ppFieldMap
     ) where
 
 import Data.Align
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Json (Json (..), ToJSON (..))
+import Json (ToJSON (..))
+import Distribution.Utils.Json (Json(..))
+import Distribution.Fields.Pretty (PrettyField)
+import Distribution.Pretty (Pretty (..))
+import Pretty (prettyField)
 
 newtype FieldMap v = FieldMap (Map String v)
     deriving (Show, Functor, Foldable, Traversable)
@@ -24,6 +30,9 @@ toList (FieldMap m) = Map.toList m
 fromList :: Semigroup v => [(String, v)] -> FieldMap v
 fromList = FieldMap . Map.fromListWith (<>)
 
+empty :: FieldMap v
+empty = FieldMap mempty
+
 instance Semigroup v => Semigroup (FieldMap v) where
     FieldMap lhs <> FieldMap rhs = FieldMap $ Map.unionWith (<>) lhs rhs
 
@@ -35,3 +44,6 @@ instance ToJSON v => ToJSON (FieldMap v) where
 
 deriving via Map String instance Semialign FieldMap
 deriving via Map String instance Align FieldMap
+
+ppFieldMap :: Pretty a => FieldMap a -> [PrettyField ()]
+ppFieldMap it = [prettyField n (pretty a) | (n, a) <- FieldMap.toList it]

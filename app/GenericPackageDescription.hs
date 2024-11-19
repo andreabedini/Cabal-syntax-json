@@ -3,12 +3,14 @@ module GenericPackageDescription
     , Tree (..)
     , CondTree'
     , foldTree
+    , ppTree
     ) where
 
 import Data.Foldable (Foldable (..))
 import Data.Maybe (maybeToList)
 
 import Distribution.CabalSpecVersion (CabalSpecVersion)
+import Distribution.Fields.Pretty (PrettyField (..))
 import Distribution.PackageDescription.FieldGrammar
     ( benchmarkFieldGrammar
     , executableFieldGrammar
@@ -39,15 +41,21 @@ import Distribution.Types.UnqualComponentName (unUnqualComponentName)
 import FieldMap (FieldMap)
 import Json
 import JsonFieldGrammar (Fragment (..), JSONFieldGrammar (..), jsonFieldGrammar)
+import Pretty (prettySection)
+import Distribution.Utils.Json (Json (..))
 
 data Tree a where
     Value :: a -> Tree a
     Group :: [(String, Tree a)] -> Tree a
     deriving (Show, Functor, Foldable, Traversable)
 
-foldTree :: Monoid m => (a -> m) -> (String -> m -> m) -> Tree a -> m
+-- foldTree :: Monoid m => (a -> m) -> (String -> m -> m) -> Tree a -> m
+-- foldTree f _ (Value a) = f a
+-- foldTree f g (Group as) = foldMap (\(n, a) -> g n (foldTree f g a)) as
+
+foldTree :: (a -> b) -> ([(String, b)] -> b) -> Tree a -> b
 foldTree f _ (Value a) = f a
-foldTree f g (Group as) = foldMap (\(n, a) -> g n (foldTree f g a)) as
+foldTree f g (Group as) = g [(n, foldTree f g a) | (n, a) <- as]
 
 instance ToJSON a => ToJSON (Tree a) where
     toJSON (Value a) = toJSON a
@@ -160,3 +168,6 @@ mkCondGroup
     -> Tree (CondTree' (FieldMap (Fragment Json)))
 mkCondGroup v mkName mkFg comps =
     Group [(mkName cn, Value $ jsonFgCondTree v (mkFg cn) c) | (cn, c) <- comps]
+
+ppTree :: (a -> [PrettyField ()]) -> Tree a -> [PrettyField ()]
+ppTree f = foldTree f (map (\(n, t) -> prettySection n [] t))

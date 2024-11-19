@@ -2,11 +2,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Json
-    ( module Json
-    , module Distribution.Utils.Json
-    )
-where
+module Json where
 
 import Compat
 import Data.Foldable (Foldable (..))
