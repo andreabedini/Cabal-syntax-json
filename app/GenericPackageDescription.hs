@@ -1,9 +1,11 @@
 module GenericPackageDescription
     ( runGenericPackageDescription
-    , Grouped (..)
+    , Tree (..)
+    , CondTree'
     ) where
 
 import Data.Foldable (Foldable (..))
+import Data.Maybe (maybeToList)
 
 import Distribution.CabalSpecVersion (CabalSpecVersion)
 import Distribution.PackageDescription.FieldGrammar
@@ -32,29 +34,23 @@ import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.SetupBuildInfo (SetupBuildInfo)
 import Distribution.Types.SourceRepo (SourceRepo (..))
 import Distribution.Types.UnqualComponentName (unUnqualComponentName)
-import Distribution.Utils.Json (Json (..))
 
-import Data.Maybe (maybeToList)
 import FieldMap (FieldMap)
-import JsonFieldGrammar (Fragment (..), JSONFieldGrammar (..), jsonFieldGrammar)
 import Json
+import JsonFieldGrammar (Fragment (..), JSONFieldGrammar (..), jsonFieldGrammar)
 
-data Grouped a where
-    Top :: a -> Grouped a
-    Named :: String -> a -> Grouped a
-    Group
-        :: String
-        -> [(String, a)]
-        -> Grouped a
+data Tree a where
+    Value :: a -> Tree a
+    -- Named :: String -> a -> Grouped a
+    Group :: [(String, Tree a)] -> Tree a
     deriving (Show, Functor, Foldable, Traversable)
 
-instance ToJSON a => ToJSON (Grouped a) where
-    toJSON (Top a) = toJSON a
-    toJSON (Named n a) = JsonObject [(n, toJSON a)]
-    toJSON (Group n as) = JsonObject [(n, JsonObject [(an, toJSON a) | (an, a) <- as])]
+instance ToJSON a => ToJSON (Tree a) where
+    toJSON (Value a) = toJSON a
+    -- toJSON (Named n a) = JsonObject [(n, toJSON a)]
+    toJSON (Group as) = JsonObject [(an, toJSON a) | (an, a) <- as]
 
-mkCondNode :: Monoid c => a -> CondTree v c a
-mkCondNode a = CondNode a mempty mempty
+type CondTree' a = CondTree ConfVar [Dependency] a
 
 -- | Transform a GenericPackageDescription into our representation.
 -- This step already transform types associated with a field grammar into FieldMap (Fragment Json).
@@ -62,75 +58,55 @@ mkCondNode a = CondNode a mempty mempty
 runGenericPackageDescription
     :: CabalSpecVersion
     -> GenericPackageDescription
-    -> [ Grouped
-            (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
-       ]
-runGenericPackageDescription v gpd =
-    mconcat
-        [ [Top $ mkCondNode $ jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)]
-        , [ Group
-                "source-repositories"
-                [ ( prettyShow (repoKind repo)
-                  , mkCondNode $ jsonFieldGrammar v (sourceRepoFieldGrammar (repoKind repo)) repo
-                  )
-                | repo <- repos
-                ]
-          | let repos = sourceRepos (packageDescription gpd)
-          , not (null repos)
-          ]
-        , [ Named "custom-setup" $ mkCondNode $ jsonFgCustomSetup v sbi
-          | sbi <- maybeToList (setupBuildInfo (packageDescription gpd))
-          ]
-        , [ Group
-                "flags"
-                [ ( unFlagName fn
-                  , mkCondNode $ jsonFieldGrammar v (flagFieldGrammar fn) flag
-                  )
-                | flag <- flags
-                , let fn = flagName flag
-                ]
-          | let flags = genPackageFlags gpd
-          , not (null flags)
-          ]
-        , [ Group
-                "libraries"
-                [ (libraryName ln, jsonFgCondTree v (libraryFieldGrammar ln) lib)
-                | (ln, lib) <- libraries
-                ]
-          | not (null libraries)
-          ]
-        , [ Group
-                "foreign-libraries"
-                [ (unUnqualComponentName name, jsonFgCondTree v (foreignLibFieldGrammar name) flib)
-                | (name, flib) <- flibs
-                ]
-          | let flibs = condForeignLibs gpd
-          , not (null flibs)
-          ]
-        , [ Group
-                "executables"
-                [ (unUnqualComponentName name, jsonFgCondTree v (executableFieldGrammar name) exe)
-                | (name, exe) <- exes
-                ]
-          | let exes = condExecutables gpd
-          , not (null exes)
-          ]
-        , [ Group
-                "test-suites"
-                [ (unUnqualComponentName name, jsonFgCondTree v testSuiteFieldGrammar test)
-                | (name, test) <- tests
-                ]
-          | not (null tests)
-          ]
-        , [ Group
-                "benchmarks"
-                [ (unUnqualComponentName name, jsonFgCondTree v benchmarkFieldGrammar benchmark)
-                | (name, benchmark) <- benchmarks
-                ]
-          | not (null benchmarks)
-          ]
-        ]
+    -> ( FieldMap (Fragment Json)
+       , [(String, Tree (FieldMap (Fragment Json)))]
+       , [(String, Tree (CondTree' (FieldMap (Fragment Json))))]
+       )
+runGenericPackageDescription v gpd = (top, middle, bottom)
   where
+    top = jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
+
+    middle =
+        mconcat
+            [ [ mkGroup
+                    v
+                    "source-repositories"
+                    (prettyShow . repoKind)
+                    (sourceRepoFieldGrammar . repoKind)
+                    repos
+              | let repos = sourceRepos (packageDescription gpd)
+              , not (null repos)
+              ]
+            , [ ("custom-setup", Value $ jsonFgCustomSetup v sbi)
+              | sbi <- maybeToList (setupBuildInfo (packageDescription gpd))
+              ]
+            , [ mkGroup v "flags" (unFlagName . flagName) (flagFieldGrammar . flagName) flags
+              | let flags = genPackageFlags gpd
+              , not (null flags)
+              ]
+            ]
+
+    bottom =
+        mconcat
+            [ [ ("libraries", mkCondGroup v libraryName libraryFieldGrammar libraries)
+              | not (null libraries)
+              ]
+            , [ ("foreign-libraries", mkCondGroup v unUnqualComponentName foreignLibFieldGrammar flibs)
+              | let flibs = condForeignLibs gpd
+              , not (null flibs)
+              ]
+            , [ ("executables", mkCondGroup v unUnqualComponentName executableFieldGrammar exes)
+              | let exes = condExecutables gpd
+              , not (null exes)
+              ]
+            , [ ("test-suites", mkCondGroup v unUnqualComponentName (const testSuiteFieldGrammar) tests)
+              | not (null tests)
+              ]
+            , [ ("benchmarks", mkCondGroup v unUnqualComponentName (const benchmarkFieldGrammar) benchmarks)
+              | not (null benchmarks)
+              ]
+            ]
+
     pn = pkgName $ package $ packageDescription gpd
 
     libraryName :: LibraryName -> String
@@ -160,3 +136,24 @@ jsonFgCondTree
     -> CondTree v c a
     -> CondTree v c (FieldMap (Fragment Json))
 jsonFgCondTree v fg = mapTreeData (jsonFieldGrammar v fg)
+
+mkGroup
+    :: CabalSpecVersion
+    -> String
+    -> (s -> String)
+    -> (s -> JSONFieldGrammar s a)
+    -> [s]
+    -> (String, Tree (FieldMap (Fragment Json)))
+mkGroup v groupName mkName mkFg as =
+    (groupName, elements)
+  where
+    elements = Group [(mkName a, Value $ jsonFieldGrammar v (mkFg a) a) | a <- as]
+
+mkCondGroup
+    :: CabalSpecVersion
+    -> (n -> String)
+    -> (n -> JSONFieldGrammar a s)
+    -> [(n, CondTree' a)]
+    -> Tree (CondTree' (FieldMap (Fragment Json)))
+mkCondGroup v mkName mkFg comps =
+    Group [(mkName cn, Value $ jsonFgCondTree v (mkFg cn) c) | (cn, c) <- comps]

@@ -2,17 +2,16 @@ module JsonFieldGrammar where
 
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
+
 import Distribution.CabalSpecVersion (CabalSpecVersion)
 import Distribution.Compat.Lens (ALens', aview)
 import Distribution.Compat.Newtype (Newtype, pack')
-import Distribution.FieldGrammar
-    ( FieldGrammar (..)
-    , defaultFreeTextFieldDefST
-    )
+import Distribution.FieldGrammar (FieldGrammar (..), defaultFreeTextFieldDefST)
 import Distribution.Fields (FieldName)
 import Distribution.Utils.Generic (fromUTF8BS)
 import Distribution.Utils.Json (Json (..))
 import Distribution.Utils.ShortText qualified as ST
+
 import FieldMap (FieldMap, singleton)
 import Json (ToJSON (..))
 

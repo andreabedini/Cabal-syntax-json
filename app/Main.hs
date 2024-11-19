@@ -1,27 +1,33 @@
 {-# LANGUAGE RecordWildCards #-}
-
-import Compat
-import CondTree (Cond (..), flattenCondTree, mkEnv, pushConditionals, simplifyGPD)
 import Control.Monad (unless)
 import Data.ByteString.Lazy qualified as BL
 import Data.Either
 import Data.Foldable
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.List.NonEmpty qualified as NE
-import Data.Semigroup (Semigroup (..))
-import Distribution.Compiler (CompilerId (..))
-import Distribution.PackageDescription hiding (foldCondTree, options)
-import Distribution.Parsec
-import Distribution.System
-import Distribution.Utils.Json
-import Distribution.Verbosity (normal)
-import FieldMap (FieldMap)
-import GenericPackageDescription (Grouped (..), runGenericPackageDescription)
-import Json (ToJSON (..))
-import JsonFieldGrammar (Fragment (..))
 import System.Console.GetOpt
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
+
+import Distribution.Compiler (CompilerId (..))
+import Distribution.Parsec
+import Distribution.System
+import Distribution.Types.Flag (FlagAssignment)
+import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
+import Distribution.Types.PackageDescription (PackageDescription (..))
+import Distribution.Utils.Json
+import Distribution.Verbosity qualified as Verbosity
+
+import Compat
+import CondTree
+    ( Env (..)
+    , defragC
+    , flattenCondTree
+    , pushConditionals
+    , simplifyGenericPackageDescription
+    )
+import FieldMap (FieldMap, toList)
+import GenericPackageDescription (CondTree', Tree (..), runGenericPackageDescription)
+import Json (ToJSON (..))
+import JsonFieldGrammar (Fragment (..))
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -114,45 +120,39 @@ main = do
 
 doOne :: Opts -> FilePath -> IO ()
 doOne Opts{..} fn = do
-    let env = mkEnv optsOs optsArch optsCompiler optsFlags
-    gpd <- simplifyGPD env <$> readGenericPackageDescription normal Nothing (makeSymbolicPath fn)
+    let env = Env optsOs optsArch optsCompiler optsFlags
+    gpd <- readGenericPackageDescription Verbosity.silent Nothing (makeSymbolicPath fn)
+    let simplifiedGpd = simplifyGenericPackageDescription env gpd
 
     let v = specVersion (packageDescription gpd)
-        x :: [Grouped (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))]
-        x = runGenericPackageDescription v gpd
+        top :: FieldMap (Fragment Json)
+        trees :: [(String, Tree (CondTree' (FieldMap (Fragment Json))))]
+        (top,  middle, trees) = runGenericPackageDescription v simplifiedGpd
 
-    let x' :: [Grouped (CondTree ConfVar [Dependency] (FieldMap (NonEmpty (Fragment Json))))]
-        x' = fmap (fmap $ mapTreeData (fmap NE.singleton)) x
+    let trees' :: [(String, Tree (FieldMap (Fragment Json)))]
+        trees' =
+            -- This is awkward but we are operating on the `a` in `[(String, Tree a)]`
+            (fmap . fmap . fmap)
+                (fmap (defragC . flattenCondTree) . pushConditionals)
+                trees
+    -- let
+    --     -- y :: [Tree (FieldMap (CondTree ConfVar [Dependency] (NonEmpty (Fragment Json))))]
+    --     y :: [(String, Tree (FieldMap (CondTree' (Fragment Json))))]
+    --     y = fmap (fmap (fmap pushConditionals)) trees
 
-    let -- y :: [Grouped (FieldMap (CondTree ConfVar [Dependency] (NonEmpty (Fragment Json))))]
-        y :: [Grouped (FieldMap (CondTree ConfVar [Dependency] (Fragment Json)))]
-        y = fmap (fmap pushConditionals) x
+    -- -- print y
+    -- -- -- NOTE: This is the step I do *not* want to make
+    -- -- -- y' :: [Tree (FieldMap (Fragment Json)) (FieldMap [Fragment (Cond ConfVar Json)])]
+    -- -- -- y' = fmap (second (fmap (foldCondTree (\c -> fmap (fmap (Cond c)))))) y
 
-    -- print y
-    -- -- NOTE: This is the step I do *not* want to make
-    -- -- y' :: [Grouped (FieldMap (Fragment Json)) (FieldMap [Fragment (Cond ConfVar Json)])]
-    -- -- y' = fmap (second (fmap (foldCondTree (\c -> fmap (fmap (Cond c)))))) y
+    -- let y'' :: [(String, Tree (FieldMap (Fragment Json)))]
+    --     y'' = fmap (fmap (fmap (fmap (defragC . flattenCondTree)))) y
 
-    let y'' :: [Grouped (FieldMap (Fragment Json))]
-        y'' = fmap (fmap (fmap (defragC . flattenCondTree))) y
-        
-    maybe BL.putStr BL.writeFile optsOutput $ renderJson $ toJSON y''
+    let json =
+            JsonObject $
+                mconcat
+                    [ [ (name, toJSON value) | (name, value) <- FieldMap.toList top ]
+                    , [ (name, toJSON value) | (name, value) <- middle ++ trees' ]
+                    ]
 
-
-jsonCond :: ToJSON a => (a, Fragment Json) -> Json
-jsonCond (a, b) = JsonObject ["_if" .= toJSON a, "_then" .= toJSON b]
-
-defragC :: Cond ConfVar (Fragment Json) -> Fragment Json
-defragC (Cond (ScalarFragment a) cs) =
-    case NE.nonEmpty cs of
-        Nothing -> ScalarFragment a
-        Just cs' -> ListLikeFragment (a `NE.cons` NE.map jsonCond cs')
-defragC (Cond (ListLikeFragment as) cs) =
-    case NE.nonEmpty cs of
-        Nothing -> ListLikeFragment as
-        Just cs' -> ListLikeFragment (as <> NE.map jsonCond cs')
-
--- bifoldG :: ToJSON a => Grouped a a -> [(String, Json)]
--- bifoldG (Entry n a) = [(n, toJSON a)]
--- bifoldG (EntryC n a) = [(n, toJSON a)]
--- bifoldG (Group n gs) = [(n, JsonObject $ foldMap bifoldG gs)]
+    maybe BL.putStr BL.writeFile optsOutput $ renderJson json

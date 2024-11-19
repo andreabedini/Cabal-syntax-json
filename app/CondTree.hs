@@ -1,14 +1,23 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module CondTree
-    ( pushConditionals
-    , Cond (..)
-    , flattenCondTree
-    , mkEnv
-    , simplifyGPD
+    ( -- ** Simplification
+      simplifyGenericPackageDescription
     , simplifyCondTree
+    , applyEnv
+    , Env (..)
+
+      -- ** Transformation
+    , pushConditionals
+    , flattenCondTree
+    , defragC
+    , Cond (..)
     ) where
 
 import Data.Either (partitionEithers)
-import Data.Functor.Identity (Identity (..))
+import Data.Foldable1 (Foldable1 (..))
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 
 import Data.Semialign (Align (..), Semialign (..))
 import Data.These (these)
@@ -19,17 +28,88 @@ import Distribution.System (Arch, OS)
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..), condIfThen, condIfThenElse)
 import Distribution.Types.Condition (Condition (..), cAnd, simplifyCondition)
 import Distribution.Types.ConfVar (ConfVar (..))
-import Distribution.Types.Dependency (Dependency)
-import Distribution.Types.Flag (FlagAssignment, lookupFlagAssignment)
+import Distribution.Types.Flag (FlagAssignment, PackageFlag (..), lookupFlagAssignment)
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Version (nullVersion)
 import Distribution.Types.VersionRange (withinRange)
 import Distribution.Utils.Json (Json (..), (.=))
 
-import Data.Foldable1 (Foldable1 (..))
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.List.NonEmpty qualified as NE
+import Data.Maybe (isJust)
 import Json (ToJSON (..))
+import JsonFieldGrammar (Fragment (..))
+
+simplifyGenericPackageDescription
+    :: Env
+    -> GenericPackageDescription
+    -> GenericPackageDescription
+simplifyGenericPackageDescription env (GenericPackageDescription{..}) =
+    GenericPackageDescription
+        packageDescription
+        gpdScannedVersion
+        (filterFlags env genPackageFlags)
+        (fmap (simplifyCondTree eval) condLibrary)
+        ((fmap . fmap) (simplifyCondTree eval) condSubLibraries)
+        ((fmap . fmap) (simplifyCondTree eval) condForeignLibs)
+        ((fmap . fmap) (simplifyCondTree eval) condExecutables)
+        ((fmap . fmap) (simplifyCondTree eval) condTestSuites)
+        ((fmap . fmap) (simplifyCondTree eval) condBenchmarks)
+  where
+    eval :: ConfVar -> Either ConfVar Bool
+    eval = applyEnv env
+
+-- | Simplifies a CondTree using a partial flag assignment. Conditions that cannot be evaluated are left untouched.
+simplifyCondTree
+    :: forall v c a
+     . (Monoid a, Monoid c)
+    => (v -> Either v Bool)
+    -> CondTree v c a
+    -> CondTree v c a
+simplifyCondTree eval (CondNode a c ifs) =
+    CondNode a c branches <> mconcat trees
+  where
+    (trees, branches) = partitionEithers $ map (simplifyCondBranch eval) ifs
+
+-- | Simplify a CondBranch using a partial variable assignment. Conditions that cannot be evaluated
+-- are left unchanged. When we simplify a CondBranch the condition might become always true,
+-- transforming the CondBranch into a CondTree. Therefore this function returns either a CondTree or
+-- a CondBranch.
+simplifyCondBranch
+    :: (Monoid a, Monoid c)
+    => (v -> Either v Bool)
+    -> CondBranch v c a
+    -> Either (CondTree v c a) (CondBranch v c a)
+simplifyCondBranch eval (CondBranch cv t me) =
+    case fst (simplifyCondition cv eval) of
+        (Lit True) -> Left $ simplifyCondTree eval t
+        (Lit False) -> Left $ maybe mempty (simplifyCondTree eval) me
+        cv' -> Right $ CondBranch cv' (simplifyCondTree eval t) (fmap (simplifyCondTree eval) me)
+
+-- * Filter out the flags defined in the environment
+filterFlags :: Env -> [PackageFlag] -> [PackageFlag]
+filterFlags Env{envFlags} = filter (\f -> isJust $ lookupFlagAssignment (flagName f) envFlags)
+
+data Env = Env
+    { envOS :: Maybe OS
+    , envArch :: Maybe Arch
+    , envCompiler :: Maybe CompilerId
+    , envFlags :: FlagAssignment
+    }
+
+applyEnv
+    :: Env
+    -> ConfVar
+    -> Either ConfVar Bool
+applyEnv Env{envOS = Just os} (OS os') =
+    Right (os == os')
+applyEnv Env{envArch = Just arch} (Arch arch') =
+    Right (arch == arch')
+applyEnv Env{envCompiler = Just (CompilerId comp ver)} (Impl comp' ver') =
+    Right (ver /= nullVersion && ver `withinRange` ver' && comp == comp')
+applyEnv Env{envFlags} (PackageFlag fn) =
+    case lookupFlagAssignment fn envFlags of
+        Nothing -> Left (PackageFlag fn)
+        Just b -> Right b
+applyEnv _ var = Left var
 
 pushConditionals
     :: forall f v c a
@@ -92,74 +172,22 @@ flattenCondTree (CondNode a _ ifs) =
 data Cond v a = Cond a [(Condition v, a)]
     deriving (Show, Functor, Foldable, Traversable)
 
-instance (ToJSON v, ToJSON a) => ToJSON (Cond v a) where
-    toJSON (Cond a []) = toJSON a
-    toJSON (Cond a as) = JsonArray (toJSON a : map jsonCond as)
-
--- instance ToJSON v => ToJSON (Cond v (Fragment Json)) where
---     toJSON (Cond (ScalarFragment a) []) = a
---     toJSON (Cond (ScalarFragment a) cs) = JsonArray (a : map jsonCond cs)
---     toJSON (Cond (ListLikeFragment as) []) = JsonArray (NE.toList as)
---     toJSON (Cond (ListLikeFragment as) cs) = JsonArray (NE.toList as <> map jsonCond cs)
+instance Foldable1 (Cond v) where
+    foldMap1 :: Semigroup m => (a -> m) -> Cond v a -> m
+    foldMap1 f (Cond a cs) = foldMap1 f $ a :| map snd cs
 
 jsonCond :: (ToJSON a, ToJSON b) => (a, b) -> Json
 jsonCond (a, b) = JsonObject ["_if" .= toJSON a, "_then" .= toJSON b]
 
-simplifyGPD
-    :: (ConfVar -> Either ConfVar Bool) -> GenericPackageDescription -> GenericPackageDescription
-simplifyGPD env = runIdentity . allCondTrees (Identity . simplifyCondTree env)
-
-allCondTrees
-    :: Applicative f
-    => (forall a. Monoid a => CondTree ConfVar [Dependency] a -> f (CondTree ConfVar [Dependency] a))
-    -> GenericPackageDescription
-    -> f GenericPackageDescription
-allCondTrees f (GenericPackageDescription p v a1 x1 x2 x3 x4 x5 x6) =
-    GenericPackageDescription
-        <$> pure p
-        <*> pure v
-        <*> pure a1
-        <*> traverse f x1
-        <*> (traverse . traverse) f x2
-        <*> (traverse . traverse) f x3
-        <*> (traverse . traverse) f x4
-        <*> (traverse . traverse) f x5
-        <*> (traverse . traverse) f x6
-
--- | Simplifies a CondTree using a partial flag assignment. Conditions that cannot be evaluated are left untouched.
-simplifyCondTree
-    :: (Monoid a, Monoid c)
-    => (v -> Either v Bool)
-    -> CondTree v c a
-    -> CondTree v c a
-simplifyCondTree env (CondNode a c ifs) =
-    CondNode a c branches <> mconcat trees
-  where
-    (trees, branches) = partitionEithers $ map simplifyCondBranch ifs
-    simplifyCondBranch (CondBranch cv t me) =
-        case fst (simplifyCondition cv env) of
-            (Lit True) -> Left (simplifyCondTree env t)
-            (Lit False) -> Left (maybe mempty (simplifyCondTree env) me)
-            -- TODO: this case does not recurse!
-            cv' -> Right (CondBranch cv' t me)
-
-mkEnv
-    :: Maybe OS
-    -> Maybe Arch
-    -> Maybe CompilerId
-    -> FlagAssignment
-    -> ConfVar
-    -> Either ConfVar Bool
-mkEnv (Just os) _march _mcomp _flags (OS os') =
-    Right (os == os')
-mkEnv _mos (Just arch) _mcomp _flags (Arch arch') =
-    Right (arch == arch')
-mkEnv _mos _march (Just (CompilerId name ver)) _flags (Impl name' vr) =
-    Right (ver /= nullVersion && name == name' && ver `withinRange` vr)
-mkEnv _mos _march _mcomp flags (PackageFlag fn)
-    | Just f <- lookupFlagAssignment fn flags =
-        Right f
-mkEnv _mos _march _mcomp _flags var = Left var
+defragC :: Cond ConfVar (Fragment Json) -> Fragment Json
+defragC (Cond (ScalarFragment a) cs) =
+    case NE.nonEmpty cs of
+        Nothing -> ScalarFragment a
+        Just cs' -> ListLikeFragment (a `NE.cons` NE.map jsonCond cs')
+defragC (Cond (ListLikeFragment as) cs) =
+    case NE.nonEmpty cs of
+        Nothing -> ListLikeFragment as
+        Just cs' -> ListLikeFragment (as <> NE.map jsonCond cs')
 
 class (Functor t, Foldable1 t) => Crosswalk1 t where
     crosswalk1 :: Semialign f => (a -> f b) -> t a -> f (t b)
