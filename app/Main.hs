@@ -1,4 +1,6 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+
 import Control.Monad (unless)
 import Data.ByteString.Lazy qualified as BL
 import Data.Either
@@ -10,7 +12,7 @@ import System.Exit (exitFailure)
 import Distribution.Compiler (CompilerId (..))
 import Distribution.Parsec
 import Distribution.System
-import Distribution.Types.Flag (FlagAssignment)
+import Distribution.Types.Flag (FlagAssignment, FlagName, unFlagName)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
 import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Utils.Json
@@ -24,10 +26,19 @@ import CondTree
     , pushConditionals
     , simplifyGenericPackageDescription
     )
+import Distribution.Fields (PrettyField)
+import Distribution.Fields.Pretty (CommentPosition (..), PrettyField (..), showFields)
+import Distribution.Pretty (Pretty (..))
+import Distribution.Simple.Utils (fromUTF8LBS, toUTF8BS)
+import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
+import Distribution.Types.Condition (Condition (..))
+import Distribution.Types.ConfVar (ConfVar (..))
+import Distribution.Types.Dependency (Dependency)
 import FieldMap (FieldMap, toList)
-import GenericPackageDescription (CondTree', Tree (..), runGenericPackageDescription)
+import GenericPackageDescription (CondTree', Tree (..), foldTree, runGenericPackageDescription)
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
+import Text.PrettyPrint (Doc, char, hsep, parens, text, (<+>))
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -127,7 +138,7 @@ doOne Opts{..} fn = do
     let v = specVersion (packageDescription gpd)
         top :: FieldMap (Fragment Json)
         trees :: [(String, Tree (CondTree' (FieldMap (Fragment Json))))]
-        (top,  middle, trees) = runGenericPackageDescription v simplifiedGpd
+        (top, middle, trees) = runGenericPackageDescription v simplifiedGpd
 
     let trees' :: [(String, Tree (FieldMap (Fragment Json)))]
         trees' =
@@ -148,11 +159,96 @@ doOne Opts{..} fn = do
     -- let y'' :: [(String, Tree (FieldMap (Fragment Json)))]
     --     y'' = fmap (fmap (fmap (fmap (defragC . flattenCondTree)))) y
 
+    putStrLn "trees:"
+    putStrLn $
+        showFields (const NoComment) $
+            foldMap
+                ( \(name, tree) ->
+                    pure
+                        $ PrettySection () (toUTF8BS name) []
+                        $ foldTree
+                            (ppCondTree2 . fmap (fmap (text . fromUTF8LBS . renderJson . toJSON)) )
+                            (\n -> pure . PrettySection () (toUTF8BS n) [])
+                        tree
+                )
+                trees
+
+    putStrLn "trees':"
+    putStrLn $
+        showFields (const NoComment) $
+            foldMap
+                ( \(name, tree) ->
+                    pure $
+                        PrettySection () (toUTF8BS name) [] $
+                            foldTree
+                                (ppFieldMap . fmap (text . fromUTF8LBS . renderJson . toJSON))
+                                (\n -> pure . PrettySection () (toUTF8BS n) [])
+                                tree
+                )
+                trees'
+
     let json =
             JsonObject $
                 mconcat
-                    [ [ (name, toJSON value) | (name, value) <- FieldMap.toList top ]
-                    , [ (name, toJSON value) | (name, value) <- middle ++ trees' ]
+                    [ [(name, toJSON value) | (name, value) <- FieldMap.toList top]
+                    , [(name, toJSON value) | (name, value) <- middle ++ trees']
                     ]
 
     maybe BL.putStr BL.writeFile optsOutput $ renderJson json
+
+ppFieldMap :: Pretty a => FieldMap a -> [PrettyField ()]
+ppFieldMap it = [PrettyField () (toUTF8BS n) (pretty a) | (n, a) <- FieldMap.toList it]
+
+ppCondTree2
+    :: (Show a, Pretty a)
+    => CondTree ConfVar [Dependency] (FieldMap a)
+    -> [PrettyField ()]
+ppCondTree2 = go
+  where
+    go (CondNode it _ ifs) = ppFieldMap it ++ concatMap ppIf ifs
+
+    ppIf (CondBranch c thenTree Nothing)
+        --        | isEmpty thenDoc = mempty
+        | otherwise = [ppIfCondition c thenDoc]
+      where
+        thenDoc = go thenTree
+    ppIf (CondBranch c thenTree (Just elseTree)) =
+        [ ppIfCondition c (go thenTree)
+        , PrettySection () "else" [] (go elseTree)
+        ]
+
+ppIfCondition
+    :: Condition ConfVar
+    -> [PrettyField ()]
+    -> PrettyField ()
+ppIfCondition c =
+    PrettySection () "if" [ppCondition c]
+
+ppCondition :: Condition ConfVar -> Doc
+ppCondition (Var x) = ppConfVar x
+ppCondition (Lit b) = text (show b)
+ppCondition (CNot c) = char '!' <> (ppCondition c)
+ppCondition (COr c1 c2) =
+    parens
+        ( hsep
+            [ ppCondition c1
+            , text "||"
+                <+> ppCondition c2
+            ]
+        )
+ppCondition (CAnd c1 c2) =
+    parens
+        ( hsep
+            [ ppCondition c1
+            , text "&&"
+                <+> ppCondition c2
+            ]
+        )
+ppConfVar :: ConfVar -> Doc
+ppConfVar (OS os) = text "os" <> parens (pretty os)
+ppConfVar (Arch arch) = text "arch" <> parens (pretty arch)
+ppConfVar (PackageFlag name) = text "flag" <> parens (ppFlagName name)
+ppConfVar (Impl c v) = text "impl" <> parens (pretty c <+> pretty v)
+
+ppFlagName :: FlagName -> Doc
+ppFlagName = text . unFlagName

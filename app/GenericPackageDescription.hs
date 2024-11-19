@@ -2,6 +2,7 @@ module GenericPackageDescription
     ( runGenericPackageDescription
     , Tree (..)
     , CondTree'
+    , foldTree
     ) where
 
 import Data.Foldable (Foldable (..))
@@ -41,13 +42,15 @@ import JsonFieldGrammar (Fragment (..), JSONFieldGrammar (..), jsonFieldGrammar)
 
 data Tree a where
     Value :: a -> Tree a
-    -- Named :: String -> a -> Grouped a
     Group :: [(String, Tree a)] -> Tree a
     deriving (Show, Functor, Foldable, Traversable)
 
+foldTree :: Monoid m => (a -> m) -> (String -> m -> m) -> Tree a -> m
+foldTree f _ (Value a) = f a
+foldTree f g (Group as) = foldMap (\(n, a) -> g n (foldTree f g a)) as
+
 instance ToJSON a => ToJSON (Tree a) where
     toJSON (Value a) = toJSON a
-    -- toJSON (Named n a) = JsonObject [(n, toJSON a)]
     toJSON (Group as) = JsonObject [(an, toJSON a) | (an, a) <- as]
 
 type CondTree' a = CondTree ConfVar [Dependency] a
