@@ -172,6 +172,9 @@ flattenCondTree (CondNode a _ ifs) =
 data Cond v a = Cond a [(Condition v, a)]
     deriving (Show, Functor, Foldable, Traversable)
 
+instance (ToJSON a, ToJSON v)=>  ToJSON (Cond v a) where
+    toJSON (Cond a cds) = JsonObject ["always" .= toJSON a, "conditions" .= JsonArray (map jsonCond cds)]
+
 instance Foldable1 (Cond v) where
     foldMap1 :: Semigroup m => (a -> m) -> Cond v a -> m
     foldMap1 f (Cond a cs) = foldMap1 f $ a :| map snd cs

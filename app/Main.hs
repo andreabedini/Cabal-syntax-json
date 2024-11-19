@@ -24,7 +24,7 @@ import CondTree
     , defragC
     , flattenCondTree
     , pushConditionals
-    , simplifyGenericPackageDescription
+    , simplifyGenericPackageDescription, Cond
     )
 import Distribution.Fields (PrettyField)
 import Distribution.Fields.Pretty (CommentPosition (..), PrettyField (..), showFields)
@@ -138,63 +138,62 @@ doOne Opts{..} fn = do
     let v = specVersion (packageDescription gpd)
         top :: FieldMap (Fragment Json)
         trees :: [(String, Tree (CondTree' (FieldMap (Fragment Json))))]
+
         (top, middle, trees) = runGenericPackageDescription v simplifiedGpd
 
-    let trees' :: [(String, Tree (FieldMap (Fragment Json)))]
-        trees' =
-            -- This is awkward but we are operating on the `a` in `[(String, Tree a)]`
-            (fmap . fmap . fmap)
-                (fmap (defragC . flattenCondTree) . pushConditionals)
-                trees
-    -- let
-    --     -- y :: [Tree (FieldMap (CondTree ConfVar [Dependency] (NonEmpty (Fragment Json))))]
-    --     y :: [(String, Tree (FieldMap (CondTree' (Fragment Json))))]
-    --     y = fmap (fmap (fmap pushConditionals)) trees
-
-    -- -- print y
-    -- -- -- NOTE: This is the step I do *not* want to make
-    -- -- -- y' :: [Tree (FieldMap (Fragment Json)) (FieldMap [Fragment (Cond ConfVar Json)])]
-    -- -- -- y' = fmap (second (fmap (foldCondTree (\c -> fmap (fmap (Cond c)))))) y
-
-    -- let y'' :: [(String, Tree (FieldMap (Fragment Json)))]
-    --     y'' = fmap (fmap (fmap (fmap (defragC . flattenCondTree)))) y
 
     putStrLn "trees:"
-    putStrLn $
-        showFields (const NoComment) $
-            foldMap
-                ( \(name, tree) ->
-                    pure
-                        $ PrettySection () (toUTF8BS name) []
-                        $ foldTree
-                            (ppCondTree2 . fmap (fmap (text . fromUTF8LBS . renderJson . toJSON)) )
-                            (\n -> pure . PrettySection () (toUTF8BS n) [])
-                        tree
-                )
-                trees
+    putStrLn $ pp1 trees
+
+    let trees1 :: [(String, Tree (FieldMap (CondTree' (Fragment Json))))]
+        trees1 =  (fmap . fmap . fmap) pushConditionals trees
+
+    putStrLn "trees:"
+    putStrLn $ pp1 $ _ trees1 
+
+    let trees2 :: [(String, Tree (FieldMap (Cond ConfVar (Fragment Json))))]
+        trees2 =  (fmap . fmap . fmap) (fmap flattenCondTree) trees1
+
+    let trees3 :: [(String, Tree (FieldMap (Fragment Json)))]
+        trees3 =  (fmap . fmap . fmap) (fmap defragC) trees2
 
     putStrLn "trees':"
-    putStrLn $
-        showFields (const NoComment) $
-            foldMap
-                ( \(name, tree) ->
-                    pure $
-                        PrettySection () (toUTF8BS name) [] $
-                            foldTree
-                                (ppFieldMap . fmap (text . fromUTF8LBS . renderJson . toJSON))
-                                (\n -> pure . PrettySection () (toUTF8BS n) [])
-                                tree
-                )
-                trees'
+    putStrLn $ pp2 trees3
 
-    let json =
-            JsonObject $
-                mconcat
-                    [ [(name, toJSON value) | (name, value) <- FieldMap.toList top]
-                    , [(name, toJSON value) | (name, value) <- middle ++ trees']
-                    ]
+-- let json =
+--         JsonObject $
+--             mconcat
+--                 [ [(name, toJSON value) | (name, value) <- FieldMap.toList top]
+--                 , [(name, toJSON value) | (name, value) <- middle ++ trees']
+--                 ]
 
-    maybe BL.putStr BL.writeFile optsOutput $ renderJson json
+-- maybe BL.putStr BL.writeFile optsOutput $ renderJson json
+
+pp1 :: [(String, Tree (CondTree' (FieldMap (Fragment Json))))] -> String
+pp1 =
+    showFields (const NoComment)
+        . foldMap
+            ( \(name, tree) ->
+                pure $
+                    PrettySection () (toUTF8BS name) [] $
+                        foldTree
+                            (ppCondTree2 . fmap (fmap (text . fromUTF8LBS . renderJson . toJSON)))
+                            (\n -> pure . PrettySection () (toUTF8BS n) [])
+                            tree
+            )
+
+pp2 :: ToJSON a => [(String, Tree (FieldMap a))] -> String
+pp2 =
+    showFields (const NoComment)
+        . foldMap
+            ( \(name, tree) ->
+                pure $
+                    PrettySection () (toUTF8BS name) [] $
+                        foldTree
+                            (ppFieldMap . fmap (text . fromUTF8LBS . renderJson . toJSON))
+                            (\n -> pure . PrettySection () (toUTF8BS n) [])
+                            tree
+            )
 
 ppFieldMap :: Pretty a => FieldMap a -> [PrettyField ()]
 ppFieldMap it = [PrettyField () (toUTF8BS n) (pretty a) | (n, a) <- FieldMap.toList it]
