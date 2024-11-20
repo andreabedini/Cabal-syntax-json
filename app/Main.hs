@@ -27,20 +27,24 @@ import Compat
 import CondTree
     ( Cond
     , Env (..)
+    , condTreeJson
     , defragC
     , flattenCondTree
     , foldCondTree
-
+    , ppCondTree2
     , pushConditionals
-    , simplifyGenericPackageDescription, ppCondTree2, condTreeJson
+    , simplifyGenericPackageDescription
     )
 
-import FieldMap (FieldMap, toList, ppFieldMap)
+import Data.Map qualified as Map
+import Data.Map.Strict (Map)
+import Distribution.Types.UnqualComponentName (UnqualComponentName, unUnqualComponentName)
+import FieldMap (FieldMap, ppFieldMap, toList)
 import GenericPackageDescription (CondTree', Tree (..), foldTree, runGenericPackageDescription)
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
+import Pretty (ppCondition, prettyField, prettySection)
 import Text.PrettyPrint (Doc, text)
-import Pretty (prettyField, ppCondition,  prettySection  )
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -138,55 +142,69 @@ doOne Opts{..} fn = do
     let simplifiedGpd = simplifyGenericPackageDescription env gpd
 
     let v = specVersion (packageDescription gpd)
-        top :: FieldMap (Fragment Json)
-        trees :: [(String, Tree (CondTree' (FieldMap (Fragment Json))))]
 
-        (top, middle, trees) = runGenericPackageDescription v simplifiedGpd
+        top :: FieldMap (Fragment Json)
+        trees :: Map String (Map UnqualComponentName (CondTree' (FieldMap (Fragment Json))))
+        (top, trees) = runGenericPackageDescription v simplifiedGpd
 
     putStrLn "original"
-    putStrLn $ pp1 trees
-
-    let trees0 :: [(String, (Tree (CondTree' (FieldMap (NE.NonEmpty (Fragment Json))))))]
-        trees0 = (fmap . fmap . fmap . fmap . fmap) NE.singleton trees
-
-    putStrLn "wrap in NonEmpty"
     putStrLn $
-        pp
-            ( foldCondTree
-                (\it ifs -> [prettyField n (something a) | (n, a) <- FieldMap.toList it] ++ concat ifs)
-                ( \c thenTree ->
-                    [ prettySection "if" [ppCondition c] thenTree
-                    ]
+        showFields (const NoComment) $
+            Map.foldMapWithKey
+                ( \k ->
+                    pure
+                        . prettySection k []
+                        . Map.foldMapWithKey
+                            ( \k' ->
+                                pure
+                                    . prettySection (unUnqualComponentName k') []
+                                    . ppCondTree2
+                                    . fmap (fmap something)
+                            )
                 )
-                ( \c thenTree elseTree ->
-                    [ prettySection "if" [ppCondition c] thenTree
-                    , prettySection "else" [] elseTree
-                    ]
-                )
-            )
-            trees0
+                trees
 
-    let trees1 :: [(String, Tree (FieldMap (CondTree' (Fragment Json))))]
-        trees1 = (fmap . fmap . fmap) pushConditionals trees
+-- let trees0 :: [(String, (Tree (CondTree' (FieldMap (NE.NonEmpty (Fragment Json))))))]
+--     trees0 = (fmap . fmap . fmap . fmap . fmap) NE.singleton trees
 
-    putStrLn "after pushConditionals"
-    putStrLn $
-        pp
-            (\fm -> [prettyField n (something $ condTreeJson a) | (n, a) <- FieldMap.toList fm])
-            trees1
+-- putStrLn "wrap in NonEmpty"
+-- putStrLn $
+--     pp
+--         ( foldCondTree
+--             (\it ifs -> [prettyField n (something a) | (n, a) <- FieldMap.toList it] ++ concat ifs)
+--             ( \c thenTree ->
+--                 [ prettySection "if" [ppCondition c] thenTree
+--                 ]
+--             )
+--             ( \c thenTree elseTree ->
+--                 [ prettySection "if" [ppCondition c] thenTree
+--                 , prettySection "else" [] elseTree
+--                 ]
+--             )
+--         )
+--         trees0
 
-    let trees2 :: [(String, Tree (FieldMap (Cond ConfVar (Fragment Json))))]
-        trees2 = (fmap . fmap . fmap) (fmap flattenCondTree) trees1
+-- let trees1 :: [(String, Tree (FieldMap (CondTree' (Fragment Json))))]
+--     trees1 = (fmap . fmap . fmap) pushConditionals trees
 
-    putStrLn "after flattenCondTree"
-    putStrLn $
-        pp (\fm -> [prettyField n (something a) | (n, a) <- FieldMap.toList fm]) trees2
+-- putStrLn "after pushConditionals"
+-- putStrLn $
+--     pp
+--         (\fm -> [prettyField n (something $ condTreeJson a) | (n, a) <- FieldMap.toList fm])
+--         trees1
 
-    let trees3 :: [(String, Tree (FieldMap (Fragment Json)))]
-        trees3 = (fmap . fmap . fmap) (fmap defragC) trees2
+-- let trees2 :: [(String, Tree (FieldMap (Cond ConfVar (Fragment Json))))]
+--     trees2 = (fmap . fmap . fmap) (fmap flattenCondTree) trees1
 
-    putStrLn "trees':"
-    putStrLn $ pp2 trees3
+-- putStrLn "after flattenCondTree"
+-- putStrLn $
+--     pp (\fm -> [prettyField n (something a) | (n, a) <- FieldMap.toList fm]) trees2
+
+-- let trees3 :: [(String, Tree (FieldMap (Fragment Json)))]
+--     trees3 = (fmap . fmap . fmap) (fmap defragC) trees2
+
+-- putStrLn "trees':"
+-- putStrLn $ pp2 trees3
 
 -- let json =
 --         JsonObject $
@@ -217,4 +235,3 @@ pp2 = pp (ppFieldMap . fmap something)
 
 something :: ToJSON a => a -> Doc
 something = text . fromUTF8LBS . renderJson . toJSON
-
