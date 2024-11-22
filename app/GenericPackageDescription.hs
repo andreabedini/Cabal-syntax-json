@@ -3,9 +3,13 @@
 module GenericPackageDescription
     ( runGenericPackageDescription
     , Tree (..)
-    , CondTree'
+    , GPD (..)
+    , Components (..)
+    , MyCondTree'
     , foldTree
     , ppTree
+    , MyCondTree (..)
+    , MyCondBranch (..)
     ) where
 
 import Data.Foldable (Foldable (..))
@@ -27,32 +31,24 @@ import Distribution.PackageDescription.FieldGrammar
     , unvalidateTestSuite
     )
 import Distribution.Pretty (prettyShow)
-import Distribution.Types.CondTree (CondTree (..), mapTreeData)
 import Distribution.Types.ConfVar (ConfVar)
-import Distribution.Types.Dependency (Dependency)
 import Distribution.Types.Flag (PackageFlag (..), unFlagName)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
 import Distribution.Types.LibraryName (LibraryName (..), libraryNameString)
 import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Types.PackageId (PackageIdentifier (..))
-import Distribution.Types.PackageName (PackageName, unPackageName)
+import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.SourceRepo (SourceRepo (..))
-import Distribution.Types.UnqualComponentName
-    ( UnqualComponentName
-    , mkUnqualComponentName
-    , unUnqualComponentName
-    )
+import Distribution.Types.UnqualComponentName (UnqualComponentName, mkUnqualComponentName)
+import Distribution.Utils.Json (Json (..))
 
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Proxy (Proxy (..))
-import Distribution.Types.Executable
-import Distribution.Types.ForeignLib (ForeignLib)
-import Distribution.Types.Library (Library)
-import Distribution.Utils.Json (Json (..))
+
+import CondTree (MyCondBranch (..), MyCondTree (..), convertCondTree)
 import FieldMap (FieldMap, fromList)
 import Json
-import JsonFieldGrammar (Fragment (..), JSONFieldGrammar (..), jsonFieldGrammar)
+import JsonFieldGrammar (Fragment (..), jsonFieldGrammar)
 import Pretty (prettySection)
 
 data Tree a where
@@ -72,18 +68,19 @@ instance ToJSON a => ToJSON (Tree a) where
     toJSON (Value a) = toJSON a
     toJSON (Group as) = JsonObject [(an, toJSON a) | (an, a) <- as]
 
-type CondTree' a = CondTree ConfVar [Dependency] a
+type MyCondTree' a = MyCondTree ConfVar a
 
--- data GPD
---     = GPD
---         (FieldMap (Fragment Json))
---         ( Map
---             String
---             ( Map
---                 UnqualComponentName
---                 (CondTree' (Fragment Json))
---             )
---         )
+data GPD a b = GPD a (Components b)
+type GPD' = GPD (FieldMap (Fragment Json)) (MyCondTree' (FieldMap (Fragment Json)))
+
+data Components a = Components
+    { compLibraries :: Map UnqualComponentName a
+    , compForeignLibraries :: Map UnqualComponentName a
+    , compExecutables :: Map UnqualComponentName a
+    , compTestSuites :: Map UnqualComponentName a
+    , compBenchmarks :: Map UnqualComponentName a
+    }
+    deriving (Show, Functor, Foldable, Traversable)
 
 -- | Transform a GenericPackageDescription into our representation.
 -- This step already transform types associated with a field grammar into FieldMap (Fragment Json).
@@ -91,10 +88,8 @@ type CondTree' a = CondTree ConfVar [Dependency] a
 runGenericPackageDescription
     :: CabalSpecVersion
     -> GenericPackageDescription
-    -> ( FieldMap (Fragment Json)
-       , Map String (Map UnqualComponentName (CondTree' (FieldMap (Fragment Json))))
-       )
-runGenericPackageDescription v gpd = (top, bottom)
+    -> GPD'
+runGenericPackageDescription v gpd = GPD top (fmap convertCondTree bottom)
   where
     top =
         jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
@@ -131,63 +126,44 @@ runGenericPackageDescription v gpd = (top, bottom)
                 , not (null flags)
                 ]
 
-    bottom :: Map String (Map UnqualComponentName (CondTree' (FieldMap (Fragment Json))))
     bottom =
-        Map.fromList $
-            mconcat
-                [ [ ( "libraries"
-                    , Map.fromList
-                        [ ( libraryName ln
-                          , mapTreeData (jsonFieldGrammar v (libraryFieldGrammar ln)) lib
-                          )
-                        | (ln, lib) <- libraries
-                        ]
-                    )
-                  | not (null libraries)
-                  ]
-                , [ ( "foreign-libraries"
-                    , Map.fromList
-                        [ ( ucn
-                          , mapTreeData (jsonFieldGrammar v (foreignLibFieldGrammar ucn)) flib
-                          )
-                        | (ucn, flib) <- flibs
-                        ]
-                    )
-                  | let flibs = condForeignLibs gpd
-                  , not (null flibs)
-                  ]
-                , [ ( "executables"
-                    , Map.fromList
-                        [ ( ucn
-                          , mapTreeData (jsonFieldGrammar v (executableFieldGrammar ucn)) exe
-                          )
-                        | (ucn, exe) <- exes
-                        ]
-                    )
-                  | let exes = condExecutables gpd
-                  , not (null exes)
-                  ]
-                , [ ( "test-suites"
-                    , Map.fromList
-                        [ ( ucn
-                          , mapTreeData (jsonFieldGrammar v testSuiteFieldGrammar) test
-                          )
-                        | (ucn, test) <- tests
-                        ]
-                    )
-                  | not (null tests)
-                  ]
-                , [ ( "benchmarks"
-                    , Map.fromList
-                        [ ( ucn
-                          , mapTreeData (jsonFieldGrammar v benchmarkFieldGrammar) benchmark
-                          )
-                        | (ucn, benchmark) <- benchmarks
-                        ]
-                    )
-                  | not (null benchmarks)
-                  ]
-                ]
+        Components
+            { compLibraries =
+                Map.fromList
+                    [ ( libraryName ln
+                      , fmap (jsonFieldGrammar v (libraryFieldGrammar ln)) lib
+                      )
+                    | (ln, lib) <- libraries
+                    ]
+            , compForeignLibraries =
+                Map.fromList
+                    [ ( ucn
+                      , fmap (jsonFieldGrammar v (foreignLibFieldGrammar ucn)) flib
+                      )
+                    | (ucn, flib) <- condForeignLibs gpd
+                    ]
+            , compExecutables =
+                Map.fromList
+                    [ ( ucn
+                      , fmap (jsonFieldGrammar v (executableFieldGrammar ucn)) exe
+                      )
+                    | (ucn, exe) <- condExecutables gpd
+                    ]
+            , compTestSuites =
+                Map.fromList
+                    [ ( ucn
+                      , fmap (jsonFieldGrammar v testSuiteFieldGrammar) test
+                      )
+                    | (ucn, test) <- tests
+                    ]
+            , compBenchmarks =
+                Map.fromList
+                    [ ( ucn
+                      , fmap (jsonFieldGrammar v benchmarkFieldGrammar) benchmark
+                      )
+                    | (ucn, benchmark) <- benchmarks
+                    ]
+            }
 
     pn = pkgName $ package $ packageDescription gpd
 
@@ -200,11 +176,11 @@ runGenericPackageDescription v gpd = (top, bottom)
             , [(LSubLibName ucn, l) | (ucn, l) <- condSubLibraries gpd]
             ]
     tests =
-        [ (ucn, mapTreeData unvalidateTestSuite ts) | (ucn, ts) <- condTestSuites gpd
+        [ (ucn, fmap unvalidateTestSuite ts) | (ucn, ts) <- condTestSuites gpd
         ]
 
     benchmarks =
-        [ (ucn, mapTreeData unvalidateBenchmark b)
+        [ (ucn, fmap unvalidateBenchmark b)
         | (ucn, b) <- condBenchmarks gpd
         ]
 

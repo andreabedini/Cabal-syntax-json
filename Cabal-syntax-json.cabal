@@ -15,6 +15,7 @@ executable cabal2json
                   , Cabal-syntax ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
                   , semialign
                   , pretty
+                  , pretty-simple
                   , these
   other-modules:    Compat
                     CondTree
