@@ -1,18 +1,18 @@
-module Pretty where
-import Text.PrettyPrint (Doc, text, char, parens, hsep, (<+>))
+module Pretty (PrettyFieldClass (..), prettySection, ppCondition) where
+
 import Distribution.Fields.Pretty (PrettyField (..))
-import Distribution.Types.ConfVar (ConfVar (..))
-import Distribution.Types.Condition (Condition (..))
-import Distribution.Types.Flag (FlagName, unFlagName)
 import Distribution.Pretty (Pretty (..))
 import Distribution.Simple.Utils (toUTF8BS)
+import Distribution.Types.Condition (Condition (..))
+import Distribution.Types.ConfVar (ConfVar (..))
+import Distribution.Types.Flag (FlagName, unFlagName)
+import Text.PrettyPrint (Doc, char, hsep, parens, text, (<+>))
 
-prettyField :: String -> Doc -> PrettyField ()
-prettyField n = PrettyField () (toUTF8BS n)
+class PrettyFieldClass a where
+    prettyField :: a -> [PrettyField ()]
 
 prettySection :: String -> [Doc] -> [PrettyField ()] -> PrettyField ()
 prettySection n args = PrettySection () (toUTF8BS n) (map pretty args)
-
 
 ppCondition :: Condition ConfVar -> Doc
 ppCondition =
@@ -31,13 +31,13 @@ foldCondition
     -> (a -> a -> a)
     -> Condition v
     -> a
-foldCondition var lit not or and = go
+foldCondition v l n o a = go
   where
-    go (Var a) = var a
-    go (Lit b) = lit b
-    go (CNot c) = not (go c)
-    go (COr c1 c2) = or (go c1) (go c2)
-    go (CAnd c1 c2) = and (go c1) (go c2)
+    go (Var x) = v x
+    go (Lit b) = l b
+    go (CNot c) = n (go c)
+    go (COr c1 c2) = o (go c1) (go c2)
+    go (CAnd c1 c2) = a (go c1) (go c2)
 
 ppConfVar :: ConfVar -> Doc
 ppConfVar (OS os) = text "os" <> parens (pretty os)

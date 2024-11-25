@@ -39,12 +39,15 @@ import CondTree
     ( Env (..)
     , MyCondBranch (..)
     , MyCondTree (..)
-    , ppCondTree2
-    , pushConditionals
+    -- , pushConditionals
+
+    , convertCondTree'
+    , pushConditionalsOld
     , simplifyGenericPackageDescription
     )
 import Data.These (These (..))
 import Distribution.Types.Condition (Condition (..))
+import Distribution.Types.Dependency (Dependency)
 import FieldMap (FieldMap (..), fromList, toList)
 import GenericPackageDescription
     ( Components (..)
@@ -166,7 +169,7 @@ doOne Opts{..} fn = do
             prettyComponents
                 ( \k c ->
                     [ prettySection (unUnqualComponentName k) [] $
-                        ppCondTree2 (ppFieldMap pretty) (fmap (fmap something) c)
+                        prettyField (fmap (fmap something) c)
                     ]
                 )
                 components
@@ -230,9 +233,6 @@ doOne Opts{..} fn = do
     -- maybe BL.putStr BL.writeFile optsOutput $ renderJson json
     putStrLn "Maybe it works"
 
-ppFieldMap :: (t -> Doc) -> FieldMap t -> [PrettyField ()]
-ppFieldMap f it = [prettyField n (f a) | (n, a) <- FieldMap.toList it]
-
 prettyComponents
     :: (UnqualComponentName -> a -> [PrettyField ()])
     -> Components a
@@ -276,30 +276,36 @@ test =
                 , myCondBranchOptions =
                     This $
                         MyCondNode
-                            { myCondTreeData =
-                                FieldMap.fromList
-                                    [ --     ( "build-depends"
-                                      --     , ListLikeFragment
-                                      --         ( JsonObject
-                                      --             [ ("package", JsonString "unbuildable")
-                                      --             , ("version", JsonString "<0")
-                                      --             , ("libs", JsonArray [JsonString "unbuildable"])
-                                      --             ]
-                                      --             NE.:| []
-                                      --         )
-                                      --         NE.:| []
-                                      --     )
-                                      -- ,
-
-                                        ( "buildable"
-                                        , ScalarFragment (JsonBool False) NE.:| []
-                                        )
-                                    ]
+                            { myCondTreeData = FieldMap.fromList [("buildable", ScalarFragment (JsonBool False) NE.:| [])]
                             , myCondTreeComponents = []
                             }
                 }
             ]
         }
 
-test1 :: FieldMap (MyCondTree ConfVar (NE.NonEmpty (Fragment Json)))
-test1 = pushConditionals test
+-- test1 :: FieldMap (MyCondTree ConfVar (NE.NonEmpty (Fragment Json)))
+-- test1 = pushConditionals test
+
+testOld :: CondTree ConfVar [Dependency] (FieldMap (NE.NonEmpty (Fragment Json)))
+testOld =
+    CondNode
+        { condTreeData = mempty
+        , condTreeConstraints = []
+        , condTreeComponents =
+            [ CondBranch
+                { condBranchCondition = CNot (Var (OS Windows))
+                , condBranchIfTrue =
+                    CondNode
+                        { condTreeData = FieldMap.fromList [("buildable", ScalarFragment (JsonBool False) NE.:| [])]
+                        , condTreeConstraints = []
+                        , condTreeComponents = []
+                        }
+                , condBranchIfFalse = Nothing
+                }
+            ]
+        }
+
+testOld1 :: FieldMap (CondTree ConfVar [Dependency] (NE.NonEmpty (Fragment Json)))
+testOld1 = pushConditionalsOld testOld
+
+testOld2 = convertCondTree' testOld
