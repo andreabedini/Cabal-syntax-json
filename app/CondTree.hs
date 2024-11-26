@@ -24,9 +24,6 @@ module CondTree
     , foldCondTree
     , condTreeJson
     , convertCondTree
-    , reduceOld
-    , pushConditionalsOld
-    , test
     , convertCondTree'
     ) where
 
@@ -38,16 +35,15 @@ import Data.Foldable1 (Foldable1 (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (isJust)
-import Debug.Trace (trace)
 
-import Data.Semialign (Align (..), Semialign (..))
+import Data.Semialign (Semialign (..))
 import Data.These (These (..), these)
 
 import Distribution.Compiler (CompilerId (..))
 import Distribution.PackageDescription (cNot)
 import Distribution.Pretty (Pretty (..))
 import Distribution.System (Arch, OS)
-import Distribution.Types.CondTree (CondBranch (..), CondTree (..), condIfThen, condIfThenElse)
+import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.Condition (Condition (..), cAnd, simplifyCondition)
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagAssignment, PackageFlag (..), lookupFlagAssignment, mkFlagName)
@@ -203,85 +199,10 @@ instance Semigroup a => Semigroup (MyCondTree v a) where
     MyCondNode lhs lbranches <> MyCondNode rhs rbranches =
         MyCondNode (lhs <> rhs) (lbranches <> rbranches)
 
-pushConditionalsOld
-    :: forall f v c a
-     . ( Align f
-       , Show v
-       , Show (f a)
-       , Show a
-       , Show (f (CondTree v c a))
-       , Semigroup a
-       , Semigroup c
-       , Show c
-       , Show (f (CondBranch v c a))
-       )
-    => CondTree v c (f a)
-    -> f (CondTree v c a)
-pushConditionalsOld = go
-  where
-    go :: CondTree v c (f a) -> f (CondTree v c a)
-    go =
-        traceF (banner "go") $ \(CondNode a d ifs) ->
-            case NE.nonEmpty ifs of
-                Nothing ->
-                    fmap (\a' -> CondNode a' d []) a
-                -- WRONG: BAD:
-                -- NOTE: I cannot mutate the structure while I align!
-                -- ERROR:
-                Just ne ->
-                    alignWith
-                        ( these
-                            (\a' -> CondNode a' d mempty)
-                            (\ifs' -> reduceOld ifs')
-                            (\a' ifs' -> CondNode a' d (NE.toList ifs'))
-                        )
-                        a
-                        (crosswalk1 goBranch ne)
-
-    goBranch :: CondBranch v c (f a) -> f (CondBranch v c a)
-    goBranch = traceF (banner "goBranch") $ \(CondBranch c thenTree mElseTree) ->
-        case mElseTree of
-            Nothing ->
-                fmap (condIfThen c) $ go thenTree
-            Just elseTree ->
-                alignWith
-                    ( these
-                        (condIfThen c)
-                        (condIfThen (cNot c))
-                        (condIfThenElse c)
-                    )
-                    (go thenTree)
-                    (go elseTree)
-
 banner :: [Char] -> String
 banner name =
     unlines
         ["", replicate (length name + 8) '-', unwords ["---", name, "---"], replicate (length name + 8) '-']
-
--- WARN This function is wrong.
-reduceOld
-    :: (Semigroup a, Semigroup c, Foldable1 f, Show a, Show c, Show v, Show (f (CondBranch v c a)))
-    => f (CondBranch v c a)
-    -> CondTree v c a
-reduceOld =
-    traceF
-        (banner "reduceOld")
-        $ foldMap1
-        $ \case
-            --
-            (CondBranch cond (CondNode a c ifs) Nothing) ->
-                CondNode a c (map (meetCondition cond) ifs)
-            --
-            (CondBranch cond (CondNode a c ifs) (Just (CondNode a' c' ifs'))) ->
-                CondNode a c (map (meetCondition cond) ifs)
-                    <> CondNode a' c' (map (meetCondition (cNot cond)) ifs')
-  where
-    meetCondition c (CondBranch c' t mf) = CondBranch (c `cAnd` c') t mf
-
-traceF :: (Show a1, Show a2) => String -> (a1 -> a2) -> a1 -> a2
-traceF name f input =
-    let r = f input
-     in trace (unlines [name, show input, "=", show r]) r
 
 foldCondTree
     :: (a -> [s] -> s)
