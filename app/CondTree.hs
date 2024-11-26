@@ -10,10 +10,14 @@ module CondTree
       -- * Better CondTree
     , MyCondTree (..)
     , MyCondBranch (..)
+    , MyCondTree' (..)
+    , MyCondBranch' (..)
+    , These (..)
 
       -- ** Transformation
-
+    , banner
     -- , pushConditionals
+    , push
     , flattenCondTree
     , defragC
     , Cond (..)
@@ -56,6 +60,7 @@ import Distribution.Utils.Json (Json (..), (.=))
 import Text.PrettyPrint hiding ((<>))
 
 import Data.These.Combinators (justHere, justThere)
+import Distribution.Fields.Pretty (CommentPosition (..), showFields)
 import FieldMap (FieldMap)
 import FieldMap qualified
 import Json (ToJSON (..))
@@ -68,9 +73,8 @@ data MyCondTree v a = MyCondNode
     }
     deriving (Show, Functor, Foldable, Traversable)
 
-instance Pretty a => Pretty (MyCondTree ConfVar a) where
-    pretty (MyCondNode a branches) =
-        pretty a $$ nest 2 (vcat (map pretty branches))
+instance PrettyFieldClass a => Pretty (MyCondTree ConfVar a) where
+    pretty = text . showFields (const NoComment) . prettyField
 
 data MyCondBranch v a = MyCondBranch
     { myCondBranchCondition :: Condition v
@@ -87,31 +91,19 @@ instance Foldable (MyCondBranch v) where
 instance Traversable (MyCondBranch v) where
     traverse f (MyCondBranch c a) = MyCondBranch c <$> bitraverse (traverse f) (traverse f) a
 
-instance Pretty a => Pretty (MyCondBranch ConfVar a) where
-    pretty (MyCondBranch c theseTrees) =
-        text "if"
-            <+> ppCondition c
-            $$ nest
-                2
-                ( vcat
-                    [ foldMap (\thenTree -> text "then" <+> pretty thenTree) (justHere theseTrees)
-                    , foldMap (\elseTree -> text "else" <+> pretty elseTree) (justThere theseTrees)
-                    ]
-                )
+instance PrettyFieldClass a => Pretty (MyCondBranch ConfVar a) where
+    pretty = text . showFields (const NoComment) . prettyField
 
 instance PrettyFieldClass a => PrettyFieldClass (MyCondTree ConfVar a) where
-    prettyField = go
-      where
-        go (MyCondNode it ifs) = prettyField it ++ concatMap ppIf ifs
+    prettyField (MyCondNode it ifs) = prettyField it ++ concatMap prettyField ifs
 
-        ppIf (MyCondBranch c (This tree)) =
-            [prettySection "if" [ppCondition c] (go tree)]
-        ppIf (MyCondBranch c (That tree)) =
-            [prettySection "if" [ppCondition (cNot c)] (go tree)]
-        ppIf (MyCondBranch c (These thenTree elseTree)) =
-            [ prettySection "if" [ppCondition c] (go thenTree)
-            , prettySection "else" [] (go elseTree)
+instance PrettyFieldClass a => PrettyFieldClass (MyCondBranch ConfVar a) where
+    prettyField (MyCondBranch c t) =
+        [ prettySection "if" [ppCondition c] $
+            [ prettySection "then" [] (foldMap prettyField (justHere t))
+            , prettySection "else" [] (foldMap prettyField (justThere t))
             ]
+        ]
 
 convertCondTree :: CondTree v c a -> MyCondTree v a
 convertCondTree = go
@@ -208,118 +200,9 @@ test =
             Nothing
         ]
 
--- pushConditionals
---     :: forall f v a
---      . ( Align f
---        , Show v
---        , Show (f a)
---        , Show a
---        , Show (f (MyCondTree v a))
---        )
---     => MyCondTree v (f a)
---     -> f (MyCondTree v a)
--- pushConditionals = go
---   where
---     go :: MyCondTree v (f a) -> f (MyCondTree v a)
---     go n@(MyCondNode a ifs) =
---         case NE.nonEmpty ifs of
---             Nothing ->
---                 fmap (\a' -> MyCondNode a' []) a
---             Just ne ->
---                 alignWith
---                     ( these
---                         (\a' -> MyCondNode a' mempty)
---                         (\ifs' -> _)
---                         (\a' ifs' -> MyCondNode a' (NE.toList ifs'))
---                     )
---                     a
---                     (crosswalk1 goBranch ne)
-
---     goBranch :: MyCondBranch v (f a) -> f (MyCondBranch v a)
---     goBranch (MyCondBranch c theseTrees) =
---         fmap (MyCondBranch c) (bicrosswalk go go theseTrees)
-
 instance Semigroup a => Semigroup (MyCondTree v a) where
     MyCondNode lhs lbranches <> MyCondNode rhs rbranches =
         MyCondNode (lhs <> rhs) (lbranches <> rbranches)
-
--- instance Semialign (MyCondTree v) where
---     align :: MyCondTree v a -> MyCondTree v b -> MyCondTree v (These a b)
---     align (MyCondNode a ifs) (MyCondNode b ifs') =
---         MyCondNode (These a b) $ _
-
--- instance Crosswalk (MyCondTree v) where
---     crosswalk
---         :: forall f a b
---          . Align f
---         => (a -> f b)
---         -> MyCondTree v a
---         -> f (MyCondTree v b)
---     crosswalk f (MyCondNode a ifs) =
---         case NE.nonEmpty ifs of
---             Nothing -> flip MyCondNode [] <$> f a
---             Just ne ->
---                 alignWith
---                     ( \case
---                         This a' -> MyCondNode a' []
---                         That ifs' -> _
---                         These a' ifs' -> MyCondNode a' (NE.toList ifs')
---                     )
---                     (f a)
---                     (crosswalk1 (crosswalk f) ne)
-
--- sequenceL :: Align f => MyCondTree v (f a) -> f (MyCondTree v a)
--- sequenceL = _
-
--- something
---     :: forall f a b v
---      . (Semialign f, Align f)
---     => (a -> f b)
---     -> NonEmpty (MyCondBranch v a)
---     -> f (MyCondTree v a)
--- something f ne = _
---   where
---     x :: f (NonEmpty (MyCondBranch v b))
---     x = crosswalk1 (crosswalk f) ne
-
--- instance Crosswalk (MyCondBranch v) where
---     crosswalk :: Align f => (a -> f b) -> MyCondBranch v a -> f (MyCondBranch v b)
---     crosswalk f (MyCondBranch c theseTrees) =
---         MyCondBranch c <$> bicrosswalk (crosswalk f) (crosswalk f) theseTrees
-
--- NOTE: I don't thik this makes sense
--- alignMyCondBranch
---     :: Semigroup (MyCondTree v a)
---     => MyCondBranch v a
---     -> MyCondBranch v a
---     -> [MyCondBranch v a]
--- alignMyCondBranch (MyCondBranch lc lhs) (MyCondBranch rc rhs) =
---     [ MyCondBranch (lc `cAnd` rc) (lhs <> rhs)
---     , MyCondBranch (lc `cAnd` cNot rc) lhs
---     , MyCondBranch (cNot lc `cAnd` rc) rhs
---     ]
-
--- reduce
---     :: ( Semigroup a
---        , Semigroup c
---        , Foldable1 f
---        , Show a
---        , Show c
---        , Show v
---        , Show (f (MyCondBranch v a))
---        )
---     => f (MyCondBranch v a)
---     -> MyCondTree v a
--- reduce = traceF "reduce" $ foldMap1 $ \case
---     -- (MyCondBranch cond (MyCondNode a ifs) Nothing) ->
---     --     MyCondNode a c (map (meetMyCondition cond) ifs)
---     (MyCondBranch cond (This (MyCondNode a ifs)) ->
---         MyCondNode a (This (MyCondNode (map (meetMyCondition cond) ifs)
---     (MyCondBranch cond (MyCondNode a ifs) (Just (MyCondNode a' c' ifs'))) ->
---         MyCondNode a (map (meetMyCondition cond) ifs)
---             <> MyCondNode a' (map (meetMyCondition (cNot cond)) ifs')
---   where
---     meetCondition c (MyCondBranch c' mf) = MyCondBranch (c `cAnd` c') mf
 
 pushConditionalsOld
     :: forall f v c a
@@ -402,7 +285,7 @@ traceF name f input =
      in trace (unlines [name, show input, "=", show r]) r
 
 foldCondTree
-    :: (a -> ([s] -> s))
+    :: (a -> [s] -> s)
     -> (Condition v -> s -> s)
     -> (Condition v -> s -> s -> s)
     -> CondTree v c a
@@ -534,11 +417,15 @@ instance Semigroup a => Semigroup (MyCondTree' v a) where
 instance Functor (MyCondTree' v) where
     fmap f (MyCondNode' t) = MyCondNode' (bimap f (fmap (fmap f)) t)
 
+instance PrettyFieldClass a => PrettyFieldClass (MyCondTree' ConfVar a) where
+    prettyField (MyCondNode' t) = bifoldMap prettyField (concatMap prettyField) t
+
 instance Pretty a => Pretty (MyCondTree' ConfVar a) where
     pretty (MyCondNode' t) =
-        bifoldMap pretty (nest 2 . vcat . map pretty . NE.toList) t
-
--- pretty a $$ nest 2 (vcat (map pretty branches))
+        vcat
+            [ maybe empty pretty (justHere t)
+            , maybe empty (vcat . map pretty . NE.toList) (justThere t)
+            ]
 
 data MyCondBranch' v a = MyCondBranch' (Condition v) (These (MyCondTree' v a) (MyCondTree' v a))
     deriving Show
@@ -546,20 +433,28 @@ data MyCondBranch' v a = MyCondBranch' (Condition v) (These (MyCondTree' v a) (M
 instance Functor (MyCondBranch' v) where
     fmap f (MyCondBranch' c t) = MyCondBranch' c (bimap (fmap f) (fmap f) t)
 
+instance PrettyFieldClass a => PrettyFieldClass (MyCondBranch' ConfVar a) where
+    prettyField (MyCondBranch' c t) =
+        [ prettySection "if" [ppCondition c] $
+            [ prettySection "then" [] (foldMap prettyField (justHere t))
+            , prettySection "else" [] (foldMap prettyField (justThere t))
+            ]
+        ]
+
 instance Pretty a => Pretty (MyCondBranch' ConfVar a) where
-    pretty (MyCondBranch' c theseTrees) =
-        text "if"
-            <+> ppCondition c
-            $$ nest
-                2
-                ( vcat
-                    [ foldMap (\thenTree -> text "then" <+> pretty thenTree) (justHere theseTrees)
-                    , foldMap (\elseTree -> text "else" <+> pretty elseTree) (justThere theseTrees)
-                    ]
-                )
+    pretty (MyCondBranch' c t) =
+        vcat $
+            mconcat
+                [ [text "if" <+> ppCondition c]
+                , [text "then" $$ nest 2 (pretty h) | Just h <- [justHere t]]
+                , [text "else" $$ nest 2 (pretty h) | Just h <- [justThere t]]
+                ]
 
 push
-    :: forall a v. Semigroup a => MyCondTree' v (FieldMap a) -> FieldMap (MyCondTree' v a)
+    :: forall a v
+     . Semigroup a
+    => MyCondTree' v (FieldMap a)
+    -> FieldMap (MyCondTree' v a)
 push (MyCondNode' (This a)) =
     fmap (MyCondNode' . This) a
 push (MyCondNode' (That b)) =
@@ -570,7 +465,9 @@ push (MyCondNode' (These a b)) =
      in x <> y
 
 pushB
-    :: Semigroup a => NonEmpty (MyCondBranch' v (FieldMap a)) -> FieldMap (NonEmpty (MyCondBranch' v a))
+    :: Semigroup a
+    => NonEmpty (MyCondBranch' v (FieldMap a))
+    -> FieldMap (NonEmpty (MyCondBranch' v a))
 pushB = foldMap1 $ \case
     MyCondBranch' c (This t) ->
         fmap (NE.singleton . MyCondBranch' c . This) (push t)
@@ -586,5 +483,8 @@ convertCondTree' = go
     go (CondNode a _ ifs) = case NE.nonEmpty ifs of
         Nothing -> MyCondNode' (This a)
         Just ne -> MyCondNode' (These a (fmap goBranch ne))
-    goBranch (CondBranch c thenTree Nothing) = MyCondBranch' c (This (go thenTree))
-    goBranch (CondBranch c thenTree (Just elseTree)) = MyCondBranch' c (These (go thenTree) (go elseTree))
+
+    goBranch (CondBranch c thenTree Nothing) =
+        MyCondBranch' c (This (go thenTree))
+    goBranch (CondBranch c thenTree (Just elseTree)) =
+        MyCondBranch' c (These (go thenTree) (go elseTree))

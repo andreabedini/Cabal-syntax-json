@@ -13,24 +13,18 @@ import System.Exit (exitFailure)
 import Data.Map qualified as Map
 import Text.PrettyPrint (Doc, text)
 
-import Distribution.Compat.NonEmptySet (fromNonEmpty)
 import Distribution.Compiler (CompilerId (..))
 import Distribution.Fields (PrettyField)
 import Distribution.Fields.Pretty (CommentPosition (..), showFields)
 import Distribution.Parsec
-import Distribution.Pretty (Pretty (..))
 import Distribution.Simple.Utils (fromUTF8LBS)
 import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
-import Distribution.Types.LibraryName (LibraryName (..))
 import Distribution.Types.PackageDescription (PackageDescription (..))
-import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.UnqualComponentName (UnqualComponentName, unUnqualComponentName)
-import Distribution.Types.Version (mkVersion)
-import Distribution.Types.VersionRange (earlierVersion)
 import Distribution.Utils.Json
 import Distribution.Verbosity qualified as Verbosity
 
@@ -38,29 +32,33 @@ import Compat
 import CondTree
     ( Env (..)
     , MyCondBranch (..)
+    , MyCondBranch' (..)
     , MyCondTree (..)
+    , MyCondTree' (..)
     -- , pushConditionals
 
+    , banner
     , convertCondTree'
+    , push
+    , pushB
     , pushConditionalsOld
     , simplifyGenericPackageDescription
     )
-import Data.These (These (..))
+
+import Distribution.Pretty (Pretty (..))
 import Distribution.Types.Condition (Condition (..))
 import Distribution.Types.Dependency (Dependency)
-import FieldMap (FieldMap (..), fromList, toList)
+import FieldMap (FieldMap (..), fromList)
 import GenericPackageDescription
     ( Components (..)
     , GPD (..)
-    , MyCondTree
     , Tree (..)
     , foldTree
     , runGenericPackageDescription
     )
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
-import Pretty (prettyField, prettySection)
-import Text.Pretty.Simple (pPrint)
+import Pretty (prettyField)
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -158,41 +156,22 @@ doOne Opts{..} fn = do
     let simplifiedGpd = simplifyGenericPackageDescription env gpd
 
     let v = specVersion (packageDescription gpd)
-
-        top :: FieldMap (Fragment Json)
-        components :: Components (MyCondTree ConfVar (FieldMap (Fragment Json)))
-        GPD top components = runGenericPackageDescription v simplifiedGpd
+        GPD top components0 = runGenericPackageDescription v simplifiedGpd
 
     putStrLn "original"
-    putStrLn $
-        showFields (const NoComment) $
-            prettyComponents
-                ( \k c ->
-                    [ prettySection (unUnqualComponentName k) [] $
-                        prettyField (fmap (fmap something) c)
-                    ]
-                )
-                components
+    putStrLn $ showFields (const NoComment) $ prettyField components0
 
-    -- let components0 :: Components (MyCondTree ConfVar (FieldMap (NE.NonEmpty (Fragment Json))))
-    --     components0 = (fmap . fmap . fmap) NE.singleton components
+    let components1 :: Components (MyCondTree' ConfVar (FieldMap (Fragment Json)))
+        components1 = fmap convertCondTree' components0
+    putStrLn (banner "converted")
+    putStrLn $ showFields (const NoComment) $ prettyField components1
 
-    -- putStrLn "wrap in NonEmpty"
-    -- putStrLn $
-    --     showFields (const NoComment) $
-    --         prettyComponents
-    --             ( \k c ->
-    --                 [ prettySection (unUnqualComponentName k) [] $
-    --                     ppCondTree2 (ppFieldMap pretty) (fmap (fmap something) c)
-    --                 ]
-    --             )
-    --             components0
+    let components2 :: Components (FieldMap (MyCondTree' ConfVar (Fragment Json)))
+        components2 = fmap push components1
+    putStrLn (banner "pushed")
+    print $ pretty components2
 
-    -- let components1 :: Components (FieldMap (MyCondTree ConfVar (NE.NonEmpty (Fragment Json))))
-    --     components1 = fmap pushConditionals components0
-
-    -- putStrLn "after pushConditionals"
-    -- pPrint components1
+    -- let components3 = fmap _ components2
 
     -- putStrLn $
     --     showFields (const NoComment) $
@@ -233,59 +212,6 @@ doOne Opts{..} fn = do
     -- maybe BL.putStr BL.writeFile optsOutput $ renderJson json
     putStrLn "Maybe it works"
 
-prettyComponents
-    :: (UnqualComponentName -> a -> [PrettyField ()])
-    -> Components a
-    -> [PrettyField ()]
-prettyComponents f (Components libs flibs exes tests benchs) =
-    [ prettySection "libraries" [] (Map.foldMapWithKey f libs)
-    , prettySection "foreign-libraries" [] (Map.foldMapWithKey f flibs)
-    , prettySection "executables" [] (Map.foldMapWithKey f exes)
-    , prettySection "test-suites" [] (Map.foldMapWithKey f tests)
-    , prettySection "benchmarks" [] (Map.foldMapWithKey f benchs)
-    ]
-
-pp :: (a -> [PrettyField ()]) -> [(String, Tree a)] -> String
-pp f =
-    showFields (const NoComment)
-        . foldMap
-            ( \(name, tree) ->
-                [ prettySection name [] $
-                    foldTree f (map (\(n, t) -> prettySection n [] t)) tree
-                ]
-            )
-
--- \$ foldTree f (\n t -> [prettySection n [] t]) tree ]
-
--- pp1 :: [(String, Tree (CondTree' (FieldMap (Fragment Json))))] -> String
--- pp1 = pp (ppCondTree2 . fmap (fmap something))
-
--- pp2 :: ToJSON a => [(String, Tree (FieldMap a))] -> String
--- pp2 = pp (ppFieldMap . fmap something)
-
-something :: ToJSON a => a -> Doc
-something = text . fromUTF8LBS . renderJson . toJSON
-
-test :: MyCondTree ConfVar (FieldMap (NE.NonEmpty (Fragment Json)))
-test =
-    MyCondNode
-        { myCondTreeData = mempty
-        , myCondTreeComponents =
-            [ MyCondBranch
-                { myCondBranchCondition = CNot (Var (OS Windows))
-                , myCondBranchOptions =
-                    This $
-                        MyCondNode
-                            { myCondTreeData = FieldMap.fromList [("buildable", ScalarFragment (JsonBool False) NE.:| [])]
-                            , myCondTreeComponents = []
-                            }
-                }
-            ]
-        }
-
--- test1 :: FieldMap (MyCondTree ConfVar (NE.NonEmpty (Fragment Json)))
--- test1 = pushConditionals test
-
 testOld :: CondTree ConfVar [Dependency] (FieldMap (NE.NonEmpty (Fragment Json)))
 testOld =
     CondNode
@@ -308,4 +234,7 @@ testOld =
 testOld1 :: FieldMap (CondTree ConfVar [Dependency] (NE.NonEmpty (Fragment Json)))
 testOld1 = pushConditionalsOld testOld
 
+testOld2 :: MyCondTree' ConfVar (FieldMap (NE.NonEmpty (Fragment Json)))
 testOld2 = convertCondTree' testOld
+
+testOld2' = push testOld2

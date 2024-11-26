@@ -3,13 +3,28 @@ module Pretty (PrettyFieldClass (..), prettySection, ppCondition) where
 import Distribution.Fields.Pretty (PrettyField (..))
 import Distribution.Pretty (Pretty (..))
 import Distribution.Simple.Utils (toUTF8BS)
+import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.Condition (Condition (..))
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagName, unFlagName)
+
 import Text.PrettyPrint (Doc, char, hsep, parens, text, (<+>))
 
 class PrettyFieldClass a where
     prettyField :: a -> [PrettyField ()]
+
+instance PrettyFieldClass a => PrettyFieldClass (CondTree ConfVar c a) where
+    prettyField = go
+      where
+        go (CondNode a _ bs) = prettyField a <> concatMap goBranch bs
+
+        goBranch (CondBranch c thenTree Nothing) =
+            [ prettySection "if" [ppCondition c] (go thenTree)
+            ]
+        goBranch (CondBranch c thenTree (Just elseTree)) =
+            [ prettySection "if" [ppCondition c] (go thenTree)
+            , prettySection "else" [] (go elseTree)
+            ]
 
 prettySection :: String -> [Doc] -> [PrettyField ()] -> PrettyField ()
 prettySection n args = PrettySection () (toUTF8BS n) (map pretty args)

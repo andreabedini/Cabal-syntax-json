@@ -8,12 +8,16 @@ import Distribution.Compat.Lens (ALens', aview)
 import Distribution.Compat.Newtype (Newtype, pack')
 import Distribution.FieldGrammar (FieldGrammar (..), defaultFreeTextFieldDefST)
 import Distribution.Fields (FieldName)
-import Distribution.Utils.Generic (fromUTF8BS)
-import Distribution.Utils.Json (Json (..))
+import Distribution.Utils.Generic (fromUTF8BS, fromUTF8LBS)
+import Distribution.Utils.Json (Json (..), renderJson)
 import Distribution.Utils.ShortText qualified as ST
 
+import Distribution.Fields.Pretty (PrettyField (..))
+import Distribution.Pretty (Pretty (..))
 import FieldMap (FieldMap, singleton)
 import Json (ToJSON (..))
+import Pretty (PrettyFieldClass (..))
+import Text.PrettyPrint (Doc, text, vcat)
 
 --
 -- FieldGrammar stuff
@@ -166,6 +170,13 @@ instance Semigroup (Fragment a) where
 instance ToJSON a => ToJSON (Fragment a) where
     toJSON (ScalarFragment j) = toJSON j
     toJSON (ListLikeFragment js) = toJSON js
+
+instance Pretty (Fragment Json) where
+    pretty (ScalarFragment a) = prettyJson a
+    pretty (ListLikeFragment as) = vcat (map prettyJson $ NE.toList as)
+
+prettyJson :: Json -> Doc
+prettyJson = text . fromUTF8LBS . renderJson
 
 scalarFragment :: FieldName -> a -> FieldMap (Fragment a)
 scalarFragment fn v = singleton (fromUTF8BS fn) (ScalarFragment v)

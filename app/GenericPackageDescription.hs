@@ -5,9 +5,7 @@ module GenericPackageDescription
     , Tree (..)
     , GPD (..)
     , Components (..)
-    , MyCondTree'
     , foldTree
-    , ppTree
     , MyCondTree (..)
     , MyCondBranch (..)
     ) where
@@ -16,7 +14,7 @@ import Data.Foldable (Foldable (..))
 import Data.Maybe (fromMaybe, maybeToList)
 
 import Distribution.CabalSpecVersion (CabalSpecVersion)
-import Distribution.Fields.Pretty (PrettyField (..))
+import Distribution.Fields.Pretty (CommentPosition (..), PrettyField, showFields)
 import Distribution.PackageDescription.FieldGrammar
     ( benchmarkFieldGrammar
     , executableFieldGrammar
@@ -30,8 +28,10 @@ import Distribution.PackageDescription.FieldGrammar
     , unvalidateBenchmark
     , unvalidateTestSuite
     )
-import Distribution.Pretty (prettyShow)
+import Distribution.Pretty (Pretty (..), prettyShow)
+import Distribution.Types.CondTree (CondTree)
 import Distribution.Types.ConfVar (ConfVar)
+import Distribution.Types.Dependency (Dependency)
 import Distribution.Types.Flag (PackageFlag (..), unFlagName)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
 import Distribution.Types.LibraryName (LibraryName (..), libraryNameString)
@@ -39,17 +39,22 @@ import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Types.PackageId (PackageIdentifier (..))
 import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.SourceRepo (SourceRepo (..))
-import Distribution.Types.UnqualComponentName (UnqualComponentName, mkUnqualComponentName)
+import Distribution.Types.UnqualComponentName
+    ( UnqualComponentName
+    , mkUnqualComponentName
+    , unUnqualComponentName
+    )
 import Distribution.Utils.Json (Json (..))
 
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 
-import CondTree (MyCondBranch (..), MyCondTree (..), convertCondTree)
+import CondTree (MyCondBranch (..), MyCondTree (..))
 import FieldMap (FieldMap, fromList)
 import Json
 import JsonFieldGrammar (Fragment (..), jsonFieldGrammar)
-import Pretty (prettySection)
+import Pretty (PrettyFieldClass (..), prettySection)
+import Text.PrettyPrint (text)
 
 data Tree a where
     Value :: a -> Tree a
@@ -68,10 +73,9 @@ instance ToJSON a => ToJSON (Tree a) where
     toJSON (Value a) = toJSON a
     toJSON (Group as) = JsonObject [(an, toJSON a) | (an, a) <- as]
 
-type MyCondTree' a = MyCondTree ConfVar a
-
 data GPD a b = GPD a (Components b)
-type GPD' = GPD (FieldMap (Fragment Json)) (MyCondTree' (FieldMap (Fragment Json)))
+type GPD' =
+    GPD (FieldMap (Fragment Json)) (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
 
 data Components a = Components
     { compLibraries :: Map UnqualComponentName a
@@ -82,6 +86,25 @@ data Components a = Components
     }
     deriving (Show, Functor, Foldable, Traversable)
 
+instance PrettyFieldClass a => PrettyFieldClass (Components a) where
+    prettyField (Components libs flibs exes tests benchs) =
+        mconcat
+            [ [prettySection "libraries" [] (Map.foldMapWithKey f libs) | not (null libs)]
+            , [prettySection "foreign-libraries" [] (Map.foldMapWithKey f flibs) | not (null flibs)]
+            , [prettySection "executables" [] (Map.foldMapWithKey f exes) | not (null exes)]
+            , [prettySection "test-suites" [] (Map.foldMapWithKey f tests) | not (null tests)]
+            , [prettySection "benchmarks" [] (Map.foldMapWithKey f benchs) | not (null benchs)]
+            ]
+      where
+        f :: PrettyFieldClass b => UnqualComponentName -> b -> [PrettyField ()]
+        f k c = [prettySection (unUnqualComponentName k) [] (prettyField c)]
+
+instance PrettyFieldClass a => Pretty (Components a) where
+    -- LOL but works
+    pretty = text . showFields (const NoComment) . prettyField
+
+-- something = text . fromUTF8LBS . renderJson . toJSON
+
 -- | Transform a GenericPackageDescription into our representation.
 -- This step already transform types associated with a field grammar into FieldMap (Fragment Json).
 -- This is necessary to transform then into a single type.
@@ -89,7 +112,7 @@ runGenericPackageDescription
     :: CabalSpecVersion
     -> GenericPackageDescription
     -> GPD'
-runGenericPackageDescription v gpd = GPD top (fmap convertCondTree bottom)
+runGenericPackageDescription v gpd = GPD top bottom
   where
     top =
         jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
@@ -184,8 +207,11 @@ runGenericPackageDescription v gpd = GPD top (fmap convertCondTree bottom)
         | (ucn, b) <- condBenchmarks gpd
         ]
 
-ppTree :: (a -> [PrettyField ()]) -> Tree a -> [PrettyField ()]
-ppTree f = foldTree f (map (\(n, t) -> prettySection n [] t))
+-- ppTree :: (a -> [PrettyField ()]) -> Tree a -> [PrettyField ()]
+-- ppTree f =
+
+instance PrettyFieldClass a => PrettyFieldClass (Tree a) where
+    prettyField = foldTree prettyField (map (\(n, t) -> prettySection n [] t))
 
 -- class ToCondTree n a where
 --     toCondTree
