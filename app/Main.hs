@@ -31,7 +31,6 @@ import CondTree
     , banner
     , convertCondTree'
     , pushConditionals'
-    , pushConditionalsOld
     , simplifyGenericPackageDescription
     )
 
@@ -199,8 +198,8 @@ doOne Opts{..} fn = do
     -- maybe BL.putStr BL.writeFile optsOutput $ renderJson json
     putStrLn "Maybe it works"
 
-testOld :: CondTree ConfVar [Dependency] (FieldMap (NE.NonEmpty (Fragment Json)))
-testOld =
+test :: CondTree ConfVar [Dependency] (FieldMap (NE.NonEmpty (Fragment Json)))
+test =
     CondNode
         { condTreeData = mempty
         , condTreeConstraints = []
@@ -217,9 +216,3 @@ testOld =
                 }
             ]
         }
-
-testOld1 :: FieldMap (CondTree ConfVar [Dependency] (NE.NonEmpty (Fragment Json)))
-testOld1 = pushConditionalsOld testOld
-
-testOld2 :: MyCondTree' ConfVar (FieldMap (NE.NonEmpty (Fragment Json)))
-testOld2 = convertCondTree' testOld

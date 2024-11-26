@@ -29,7 +29,6 @@ module CondTree
 
 import Data.Bifoldable (Bifoldable (..))
 import Data.Bifunctor (Bifunctor (..))
-import Data.Bitraversable (Bitraversable (..))
 import Data.Either (partitionEithers)
 import Data.Foldable1 (Foldable1 (..))
 import Data.List.NonEmpty (NonEmpty (..))
@@ -40,24 +39,23 @@ import Data.Semialign (Semialign (..))
 import Data.These (These (..), these)
 
 import Distribution.Compiler (CompilerId (..))
+import Distribution.Fields.Pretty (CommentPosition (..), showFields)
 import Distribution.PackageDescription (cNot)
 import Distribution.Pretty (Pretty (..))
 import Distribution.System (Arch, OS)
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.Condition (Condition (..), cAnd, simplifyCondition)
 import Distribution.Types.ConfVar (ConfVar (..))
-import Distribution.Types.Flag (FlagAssignment, PackageFlag (..), lookupFlagAssignment, mkFlagName)
+import Distribution.Types.Flag (FlagAssignment, PackageFlag (..), lookupFlagAssignment)
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Version (nullVersion)
 import Distribution.Types.VersionRange (withinRange)
 import Distribution.Utils.Json (Json (..), (.=))
 
+import Data.These.Combinators (justHere, justThere)
 import Text.PrettyPrint hiding ((<>))
 
-import Data.These.Combinators (justHere, justThere)
-import Distribution.Fields.Pretty (CommentPosition (..), showFields)
 import FieldMap (FieldMap)
-import FieldMap qualified
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
 import Pretty (PrettyFieldClass (..), ppCondition, prettySection)
@@ -73,18 +71,19 @@ instance PrettyFieldClass a => Pretty (MyCondTree ConfVar a) where
 
 data MyCondBranch v a = MyCondBranch
     { myCondBranchCondition :: Condition v
-    , myCondBranchOptions :: These (MyCondTree v a) (MyCondTree v a)
+    , myCondBranchIfTrue :: MyCondTree v a
+    , myCondBranchIfElse :: Maybe (MyCondTree v a)
     }
-    deriving Show
+    deriving (Show, Functor, Foldable, Traversable)
 
-instance Functor (MyCondBranch v) where
-    fmap f (MyCondBranch c a) = MyCondBranch c (bimap (fmap f) (fmap f) a)
+-- instance Functor (MyCondBranch v) where
+--     fmap f (MyCondBranch c thenTree elseTree) = MyCondBranch c (fmap f thenTree) (fmap (fmap f) elseTree)
 
-instance Foldable (MyCondBranch v) where
-    foldMap f (MyCondBranch _ a) = bifoldMap (foldMap f) (foldMap f) a
+-- instance Foldable (MyCondBranch v) where
+--     foldMap f (MyCondBranch _ thenTree elseTree) = foldMap f thenTree <> foldMap f elseTree
 
-instance Traversable (MyCondBranch v) where
-    traverse f (MyCondBranch c a) = MyCondBranch c <$> bitraverse (traverse f) (traverse f) a
+-- instance Traversable (MyCondBranch v) where
+--     traverse f (MyCondBranch c a) = MyCondBranch c <$> bitraverse (traverse f) (traverse f) a
 
 instance PrettyFieldClass a => Pretty (MyCondBranch ConfVar a) where
     pretty = text . showFields (const NoComment) . prettyField
@@ -93,19 +92,24 @@ instance PrettyFieldClass a => PrettyFieldClass (MyCondTree ConfVar a) where
     prettyField (MyCondNode it ifs) = prettyField it ++ concatMap prettyField ifs
 
 instance PrettyFieldClass a => PrettyFieldClass (MyCondBranch ConfVar a) where
-    prettyField (MyCondBranch c t) =
+    prettyField (MyCondBranch c thenTree Nothing) =
         [ prettySection "if" [ppCondition c] $
-            [ prettySection "then" [] (foldMap prettyField (justHere t))
-            , prettySection "else" [] (foldMap prettyField (justThere t))
+            [prettySection "then" [] (foldMap prettyField thenTree)]
+        ]
+    prettyField (MyCondBranch c thenTree (Just elseTree)) =
+        [ prettySection "if" [ppCondition c] $
+            [ prettySection "then" [] (foldMap prettyField thenTree)
+            , prettySection "else" [] (foldMap prettyField elseTree)
             ]
         ]
 
 convertCondTree :: CondTree v c a -> MyCondTree v a
-convertCondTree = go
-  where
-    go (CondNode a _ ifs) = MyCondNode a (map goBranch ifs)
-    goBranch (CondBranch c thenTree Nothing) = MyCondBranch c (This (go thenTree))
-    goBranch (CondBranch c thenTree (Just elseTree)) = MyCondBranch c (These (go thenTree) (go elseTree))
+convertCondTree (CondNode a _ ifs) =
+    MyCondNode a (map convertCondBranch ifs)
+
+convertCondBranch :: CondBranch v c a -> MyCondBranch v a
+convertCondBranch (CondBranch c thenTree mElseTree) =
+    MyCondBranch c (convertCondTree thenTree) (fmap convertCondTree mElseTree)
 
 simplifyGenericPackageDescription
     :: Env
@@ -179,21 +183,6 @@ applyEnv Env{envFlags} (PackageFlag fn) =
         Nothing -> Left (PackageFlag fn)
         Just b -> Right b
 applyEnv _ var = Left var
-
-test :: CondTree ConfVar () (FieldMap.FieldMap (NonEmpty Bool))
-test =
-    CondNode
-        FieldMap.empty
-        mempty
-        [ CondBranch
-            (Var (PackageFlag (mkFlagName "f")))
-            ( CondNode
-                (FieldMap.singleton "buildable" (NE.singleton False))
-                mempty
-                mempty
-            )
-            Nothing
-        ]
 
 instance Semigroup a => Semigroup (MyCondTree v a) where
     MyCondNode lhs lbranches <> MyCondNode rhs rbranches =
