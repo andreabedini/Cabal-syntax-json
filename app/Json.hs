@@ -4,48 +4,72 @@
 
 module Json where
 
-import Compat
 import Data.Foldable (Foldable (..))
-import Data.Functor.Identity
-import Data.Kind
+import Data.Functor.Identity (Identity (Identity))
+import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
+
+import Distribution.Compat.Newtype (Newtype (unpack))
+import Distribution.Compat.Prelude qualified as NE
+import Distribution.Compiler (CompilerFlavor)
+import Distribution.FieldGrammar
+    ( FilePathNT (..)
+    , List
+    , MQuoted (..)
+    , SpecLicense (..)
+    , SpecVersion (..)
+    , TestedWith (..)
+    , Token (..)
+    , Token' (..)
+    )
+import Distribution.ModuleName (ModuleName)
+import Distribution.PackageDescription.FieldGrammar
+    ( CompatLicenseFile (..)
+    )
+import Distribution.Pretty (Pretty, prettyShow)
+import Distribution.System (Arch, OS)
+import Distribution.Types.BenchmarkType (BenchmarkType)
+import Distribution.Types.BuildType (BuildType)
+import Distribution.Types.Condition (Condition (..))
+import Distribution.Types.ConfVar (ConfVar (..))
+import Distribution.Types.Dependency (Dependency (..))
+import Distribution.Types.ExeDependency (ExeDependency (..))
+import Distribution.Types.ExecutableScope (ExecutableScope)
+import Distribution.Types.Flag (FlagName)
+import Distribution.Types.ForeignLib (LibVersionInfo)
+import Distribution.Types.ForeignLibOption (ForeignLibOption)
+import Distribution.Types.ForeignLibType (ForeignLibType)
+import Distribution.Types.LegacyExeDependency (LegacyExeDependency (..))
+import Distribution.Types.LibraryName (libraryNameString)
+import Distribution.Types.LibraryVisibility (LibraryVisibility)
+import Distribution.Types.Mixin (Mixin)
+import Distribution.Types.ModuleReexport (ModuleReexport)
+import Distribution.Types.PackageName (PackageName)
+import Distribution.Types.PkgconfigDependency (PkgconfigDependency (..))
+import Distribution.Types.PkgconfigName (PkgconfigName)
+import Distribution.Types.PkgconfigVersionRange (PkgconfigVersionRange)
+import Distribution.Types.SourceRepo (KnownRepoType, RepoType)
+import Distribution.Types.TestType (TestType)
+import Distribution.Types.UnqualComponentName
+    ( UnqualComponentName
+    , unUnqualComponentName
+    )
+import Distribution.Types.Version (Version)
+import Distribution.Types.VersionRange (VersionRange)
+import Distribution.Utils.Json (Json (..), (.=))
+import Language.Haskell.Extension (Extension, Language)
+
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Distribution.Compat.Newtype
-import Distribution.Compat.Prelude qualified as NE
-import Distribution.Compiler
-import Distribution.FieldGrammar
-import Distribution.ModuleName
-import Distribution.PackageDescription.FieldGrammar
-import Distribution.Pretty
-import Distribution.System
-import Distribution.Types.BenchmarkType
-import Distribution.Types.BuildType
-import Distribution.Types.Condition
-import Distribution.Types.ConfVar
-import Distribution.Types.Dependency
-import Distribution.Types.ExeDependency
-import Distribution.Types.ExecutableScope
-import Distribution.Types.Flag
-import Distribution.Types.ForeignLib
-import Distribution.Types.ForeignLibOption
-import Distribution.Types.ForeignLibType
-import Distribution.Types.LegacyExeDependency
-import Distribution.Types.LibraryName
-import Distribution.Types.LibraryVisibility
-import Distribution.Types.Mixin
-import Distribution.Types.ModuleReexport
-import Distribution.Types.PackageName
-import Distribution.Types.PkgconfigDependency
-import Distribution.Types.PkgconfigName
-import Distribution.Types.PkgconfigVersionRange
-import Distribution.Types.SourceRepo
-import Distribution.Types.TestType
-import Distribution.Types.UnqualComponentName
-import Distribution.Types.Version
-import Distribution.Types.VersionRange
-import Distribution.Utils.Json
-import Language.Haskell.Extension
+
+import Compat
+    ( CompatDataDir (CompatDataDir)
+    , CompatFilePath (..)
+    , RelativePath
+    , RelativePathNT (RelativePathNT)
+    , SymbolicPath
+    , SymbolicPathNT (SymbolicPathNT)
+    )
 
 class ToJSON a where
     toJSON :: a -> Json
@@ -209,6 +233,9 @@ instance (ToJSON a, ToJSON b) => ToJSON (a, b) where
 
 instance ToJSON a => ToJSON (Map String a) where
     toJSON = JsonObject . Map.foldMapWithKey (\k v -> [(k, toJSON v)])
+
+instance ToJSON a => ToJSON (Map UnqualComponentName a) where
+    toJSON = JsonObject . Map.foldMapWithKey (\k v -> [(unUnqualComponentName k, toJSON v)])
 
 deriving via (a :: Type) instance ToJSON a => ToJSON (Identity a)
 

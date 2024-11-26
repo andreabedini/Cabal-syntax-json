@@ -3,46 +3,53 @@
 {-# LANGUAGE TypeFamilies #-}
 
 import Control.Monad (unless)
-import Data.Either
-import Data.Foldable
-import Data.List.NonEmpty qualified as NE
+import Data.Either (partitionEithers)
+import Data.Foldable (for_)
 import System.Console.GetOpt
+    ( ArgDescr (..)
+    , ArgOrder (..)
+    , OptDescr (..)
+    , getOpt
+    , usageInfo
+    )
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 
 import Distribution.Compiler (CompilerId (..))
 import Distribution.Fields.Pretty (CommentPosition (..), showFields)
-import Distribution.Parsec
+import Distribution.Parsec (Parsec, eitherParsec)
 import Distribution.System (Arch (..), OS (..), Platform (..))
-import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
+import Distribution.Types.CondTree (CondTree (..))
 import Distribution.Types.ConfVar (ConfVar (..))
+import Distribution.Types.Dependency (Dependency)
 import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
 import Distribution.Types.PackageDescription (PackageDescription (..))
-import Distribution.Utils.Json
+import Distribution.Utils.Json (Json (..), renderJson, (.=))
 import Distribution.Verbosity qualified as Verbosity
 
-import Compat
-import CondTree
-    ( Env (..)
-    , MyCondTree' (..)
-    -- , pushConditionals
+import Data.ByteString.Lazy qualified as BL
+import Distribution.Pretty (Pretty (..))
 
+import Compat (makeSymbolicPath, readGenericPackageDescription)
+import CondTree
+    ( Cond
+    , Env (..)
+    , MyCondTree' (..)
     , banner
     , convertCondTree'
+    , flattenCondTree'
     , pushConditionals'
     , simplifyGenericPackageDescription
     )
-
-import Distribution.Pretty (Pretty (..))
-import Distribution.Types.Condition (Condition (..))
-import Distribution.Types.Dependency (Dependency)
-import FieldMap (FieldMap (..), fromList)
+import FieldMap (FieldMap (..), toList)
 import GenericPackageDescription
     ( Components (..)
     , GPD (..)
+    , foldComponents
     , runGenericPackageDescription
     )
+import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
 import Pretty (prettyField)
 
@@ -142,6 +149,10 @@ doOne Opts{..} fn = do
     let simplifiedGpd = simplifyGenericPackageDescription env gpd
 
     let v = specVersion (packageDescription gpd)
+        top :: FieldMap (Fragment Json)
+        components0
+            :: Components
+                (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
         GPD top components0 = runGenericPackageDescription v simplifiedGpd
 
     putStrLn "original"
@@ -157,62 +168,29 @@ doOne Opts{..} fn = do
     putStrLn (banner "pushed")
     print $ pretty components2
 
-    -- let components3 = fmap _ components2
+    let components3 :: Components (FieldMap (Cond ConfVar (Fragment Json)))
+        components3 = fmap (fmap flattenCondTree') components2
+    putStrLn (banner "flattened")
+    print $ pretty components3
 
-    -- putStrLn $
-    --     showFields (const NoComment) $
-    --         prettyComponents
-    --             ( \k c ->
-    --                 ppFieldMap
-    --                     (text . showFields (const NoComment) . ppCondTree2 _)
-    --                     c
-    --                     -- [ prettySection (unUnqualComponentName k) [] $
-    --                     --     ppCondTree2 (fmap (fmap something) c)
-    --                     -- ]
-    --             )
-    --             components1
-    -- pp
-    --     (\fm -> [prettyField n (something $ condTreeJson a) | (n, a) <- FieldMap.toList fm])
-    --     components1
+    -- let json = toJSON components3
 
-    -- let components2 :: [(String, Tree (FieldMap (Cond ConfVar (Fragment Json))))]
-    --     components2 = (fmap . fmap . fmap) (fmap flattenCondTree) components1
-
-    -- putStrLn "after flattenCondTree"
-    -- putStrLn $
-    --     pp (\fm -> [prettyField n (something a) | (n, a) <- FieldMap.toList fm]) components2
-
-    -- let components3 :: [(String, Tree (FieldMap (Fragment Json)))]
-    --     components3 = (fmap . fmap . fmap) (fmap defragC) components2
-
-    -- putStrLn "components':"
-    -- putStrLn $ pp2 components3
+    let json =
+            JsonObject $
+                FieldMap.toList (fmap toJSON top)
+                    <> foldComponents
+                        (\libs -> [("libraries" .= toJSON libs) | not (null libs)])
+                        (\flibs -> [("foreign-libraries" .= toJSON flibs) | not (null flibs)])
+                        (\exes -> [("executables" .= toJSON exes) | not (null exes)])
+                        (\tests -> [("test-suites" .= toJSON tests) | not (null tests)])
+                        (\benchs -> [("benchmarks" .= toJSON benchs) | not (null benchs)])
+                        components3
 
     -- let json =
     --         JsonObject $
     --             mconcat
     --                 [ [(name, toJSON value) | (name, value) <- FieldMap.toList top]
-    --                 , [(name, toJSON value) | (name, value) <- middle ++ components']
+    --                 , [(name, toJSON value) | (name, value) <- middle ++ components2]
     --                 ]
 
-    -- maybe BL.putStr BL.writeFile optsOutput $ renderJson json
-    putStrLn "Maybe it works"
-
-test :: CondTree ConfVar [Dependency] (FieldMap (NE.NonEmpty (Fragment Json)))
-test =
-    CondNode
-        { condTreeData = mempty
-        , condTreeConstraints = []
-        , condTreeComponents =
-            [ CondBranch
-                { condBranchCondition = CNot (Var (OS Windows))
-                , condBranchIfTrue =
-                    CondNode
-                        { condTreeData = FieldMap.fromList [("buildable", ScalarFragment (JsonBool False) NE.:| [])]
-                        , condTreeConstraints = []
-                        , condTreeComponents = []
-                        }
-                , condBranchIfFalse = Nothing
-                }
-            ]
-        }
+    maybe BL.putStr BL.writeFile optsOutput $ renderJson json

@@ -1,4 +1,11 @@
-module Pretty (PrettyFieldClass (..), prettySection, ppCondition) where
+{-# LANGUAGE DerivingVia #-}
+
+module Pretty
+    ( PrettyFieldClass (..)
+    , prettySection
+    , ppCondition
+    , Vertically (..)
+    ) where
 
 import Distribution.Fields.Pretty (PrettyField (..))
 import Distribution.Pretty (Pretty (..))
@@ -8,7 +15,8 @@ import Distribution.Types.Condition (Condition (..))
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagName, unFlagName)
 
-import Text.PrettyPrint (Doc, char, hsep, parens, text, (<+>))
+import Distribution.Compat.Newtype (Newtype)
+import Text.PrettyPrint (Doc, char, hsep, parens, text, ($$), (<+>))
 
 class PrettyFieldClass a where
     prettyField :: a -> [PrettyField ()]
@@ -62,3 +70,15 @@ ppConfVar (Impl c v) = text "impl" <> parens (pretty c <+> pretty v)
 
 ppFlagName :: FlagName -> Doc
 ppFlagName = text . unFlagName
+
+newtype Vertically = Vertically Doc
+
+deriving via Doc instance Pretty Vertically
+
+instance Newtype Doc Vertically
+
+instance Semigroup Vertically where
+    Vertically lhs <> Vertically rhs = Vertically (lhs $$ rhs)
+
+instance Monoid Vertically where
+    mempty = Vertically mempty

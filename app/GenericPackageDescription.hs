@@ -2,12 +2,11 @@
 
 module GenericPackageDescription
     ( runGenericPackageDescription
-    , Tree (..)
     , GPD (..)
     , Components (..)
-    , foldTree
     , MyCondTree (..)
     , MyCondBranch (..)
+    , foldComponents
     ) where
 
 import Data.Foldable (Foldable (..))
@@ -44,7 +43,7 @@ import Distribution.Types.UnqualComponentName
     , mkUnqualComponentName
     , unUnqualComponentName
     )
-import Distribution.Utils.Json (Json (..))
+import Distribution.Utils.Json (Json (..), (.=))
 
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
@@ -55,23 +54,6 @@ import Json
 import JsonFieldGrammar (Fragment (..), jsonFieldGrammar)
 import Pretty (PrettyFieldClass (..), prettySection)
 import Text.PrettyPrint (text)
-
-data Tree a where
-    Value :: a -> Tree a
-    Group :: [(String, Tree a)] -> Tree a
-    deriving (Show, Functor, Foldable, Traversable)
-
--- foldTree :: Monoid m => (a -> m) -> (String -> m -> m) -> Tree a -> m
--- foldTree f _ (Value a) = f a
--- foldTree f g (Group as) = foldMap (\(n, a) -> g n (foldTree f g a)) as
-
-foldTree :: (a -> b) -> ([(String, b)] -> b) -> Tree a -> b
-foldTree f _ (Value a) = f a
-foldTree f g (Group as) = g [(n, foldTree f g a) | (n, a) <- as]
-
-instance ToJSON a => ToJSON (Tree a) where
-    toJSON (Value a) = toJSON a
-    toJSON (Group as) = JsonObject [(an, toJSON a) | (an, a) <- as]
 
 data GPD a b = GPD a (Components b)
 type GPD' =
@@ -85,6 +67,29 @@ data Components a = Components
     , compBenchmarks :: Map UnqualComponentName a
     }
     deriving (Show, Functor, Foldable, Traversable)
+
+instance ToJSON a => ToJSON (Components a) where
+    toJSON (Components libs flibs exes tests benchs) =
+        JsonObject $
+            mconcat
+                [ [("libraries" .= toJSON libs) | not (null libs)]
+                , [("foreign-libraries" .= toJSON flibs) | not (null flibs)]
+                , [("executables" .= toJSON exes) | not (null exes)]
+                , [("test-suites" .= toJSON tests) | not (null tests)]
+                , [("benchmarks" .= toJSON benchs) | not (null benchs)]
+                ]
+
+foldComponents
+    :: Semigroup m
+    => (Map UnqualComponentName a -> m)
+    -> (Map UnqualComponentName a -> m)
+    -> (Map UnqualComponentName a -> m)
+    -> (Map UnqualComponentName a -> m)
+    -> (Map UnqualComponentName a -> m)
+    -> Components a
+    -> m
+foldComponents f1 f2 f3 f4 f5 (Components lib flib exe test bench) =
+    f1 lib <> f2 flib <> f3 exe <> f4 test <> f5 bench
 
 instance PrettyFieldClass a => PrettyFieldClass (Components a) where
     prettyField (Components libs flibs exes tests benchs) =
@@ -207,48 +212,18 @@ runGenericPackageDescription v gpd = GPD top bottom
         | (ucn, b) <- condBenchmarks gpd
         ]
 
--- ppTree :: (a -> [PrettyField ()]) -> Tree a -> [PrettyField ()]
--- ppTree f =
+-- data Tree a where
+--     Value :: a -> Tree a
+--     Group :: [(String, Tree a)] -> Tree a
+--     deriving (Show, Functor, Foldable, Traversable)
 
-instance PrettyFieldClass a => PrettyFieldClass (Tree a) where
-    prettyField = foldTree prettyField (map (\(n, t) -> prettySection n [] t))
+-- foldTree :: (a -> b) -> ([(String, b)] -> b) -> Tree a -> b
+-- foldTree f _ (Value a) = f a
+-- foldTree f g (Group as) = g [(n, foldTree f g a) | (n, a) <- as]
 
--- class ToCondTree n a where
---     toCondTree
---         :: CabalSpecVersion
---         -> [(n, CondTree' a)]
---         -> Map UnqualComponentName (CondTree' (FieldMap (Fragment Json)))
+-- instance ToJSON a => ToJSON (Tree a) where
+--     toJSON (Value a) = toJSON a
+--     toJSON (Group as) = JsonObject [(an, toJSON a) | (an, a) <- as]
 
--- data Wrapped n a = Wrapped PackageName [(n, CondTree' a)]
-
--- data Stuff n a = Stuff [(n, CondTree' a)]
-
--- instance ToCondTree LibraryName Library where
---     toCondTree v libs =
---         Map.fromList
---             [ ( libraryName ln
---               , mapTreeData (jsonFieldGrammar v (libraryFieldGrammar ln)) lib
---               )
---             | (ln, lib) <- libs
---             ]
---       where
---         libraryName :: LibraryName -> UnqualComponentName
---         libraryName = fromMaybe (mkUnqualComponentName $ unPackageName pkgName) . libraryNameString
-
--- instance ToCondTree UnqualComponentName ForeignLib where
---     toCondTree v flibs =
---         Map.fromList
---             [ ( ucn
---               , mapTreeData (jsonFieldGrammar v (foreignLibFieldGrammar ucn)) flib
---               )
---             | (ucn, flib) <- flibs
---             ]
-
--- instance ToCondTree UnqualComponentName Executable where
---     toCondTree v flibs =
---         Map.fromList
---             [ ( ucn
---               , mapTreeData (jsonFieldGrammar v (executableFieldGrammar ucn)) flib
---               )
---             | (ucn, flib) <- flibs
---             ]
+-- instance PrettyFieldClass a => PrettyFieldClass (Tree a) where
+--     prettyField = foldTree prettyField (map (\(n, t) -> prettySection n [] t))
