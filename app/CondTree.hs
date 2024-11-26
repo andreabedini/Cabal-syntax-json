@@ -17,7 +17,7 @@ module CondTree
       -- ** Transformation
     , banner
     -- , pushConditionals
-    , push
+    , pushConditionals'
     , flattenCondTree
     , defragC
     , Cond (..)
@@ -26,7 +26,6 @@ module CondTree
     , convertCondTree
     , reduceOld
     , pushConditionalsOld
-    , pushB
     , test
     , convertCondTree'
     ) where
@@ -372,42 +371,6 @@ condTreeJson =
                 ]
         )
 
--- f :: (Semigroup a, Monoid c) => CondTree v c (FieldMap a) -> FieldMap (CondTree v c a)
--- f (CondNode a _ branches) =
---     fmap _ a <> foldMap _ branches
-
--- g :: forall v c a. (Monoid a, Monoid c) => CondBranch v c (FieldMap a) -> FieldMap (CondTree v c a)
--- g (CondBranch c thenTree Nothing) =
---     fmap (\t -> CondNode mempty mempty [CondBranch c t Nothing]) (f thenTree)
--- g (CondBranch c thenTree (Just elseTree)) =
---     fmap (\t -> CondNode mempty mempty [CondBranch c t Nothing]) (f thenTree)
---         <> fmap (\t -> CondNode mempty mempty [CondBranch c mempty (Just t)]) (f elseTree)
-
--- g' :: forall v a. Monoid a => MyCondBranch v (FieldMap a) -> FieldMap (MyCondTree v a)
--- g' (MyCondBranch c (This thenTree)) =
---     fmap (\t -> MyCondNode mempty [MyCondBranch c (This t)]) (f' thenTree)
--- g' (MyCondBranch c (That elseTree)) =
---     fmap (\t -> MyCondNode mempty [MyCondBranch c (That t)]) (f' elseTree)
--- g' (MyCondBranch c (These thenTree elseTree)) =
---     fmap (\te -> MyCondNode mempty [MyCondBranch c te]) $ align (f' thenTree) (f' elseTree)
-
--- g'' :: forall v a. MyCondBranch v (FieldMap a) -> FieldMap (MyCondBranch v a)
--- g'' (MyCondBranch c (This thenTree)) =
---     fmap (\t -> (MyCondBranch c (This t))) (f' thenTree)
--- g'' (MyCondBranch c (That elseTree)) =
---     fmap (\t -> (MyCondBranch c (That t))) (f' elseTree)
--- g'' (MyCondBranch c (These thenTree elseTree)) =
---     fmap (\te -> (MyCondBranch c te)) $ align (f' thenTree) (f' elseTree)
-
--- type These' a = These a a
-
--- f' :: forall v a. MyCondTree v (FieldMap a) -> FieldMap (MyCondTree v a)
--- f' (MyCondNode a branches) =
---     let x = fmap _ a
---         y :: [FieldMap (MyCondBranch v a)]
---         y = map g'' branches
---      in fmap (\a -> MyCondNode a _) a
-
 data MyCondTree' v a = MyCondNode' (These a (NonEmpty (MyCondBranch' v a)))
     deriving Show
 
@@ -450,32 +413,38 @@ instance Pretty a => Pretty (MyCondBranch' ConfVar a) where
                 , [text "else" $$ nest 2 (pretty h) | Just h <- [justThere t]]
                 ]
 
-push
+pushConditionals'
     :: forall a v
      . Semigroup a
     => MyCondTree' v (FieldMap a)
     -> FieldMap (MyCondTree' v a)
-push (MyCondNode' (This a)) =
+pushConditionals' (MyCondNode' (This a)) =
     fmap (MyCondNode' . This) a
-push (MyCondNode' (That b)) =
-    fmap (MyCondNode' . That) (pushB b)
-push (MyCondNode' (These a b)) =
+pushConditionals' (MyCondNode' (That b)) =
+    fmap (MyCondNode' . That) (pushConditionals'B b)
+pushConditionals' (MyCondNode' (These a b)) =
     let x = fmap (MyCondNode' . This) a
-        y = fmap (MyCondNode' . That) (pushB b)
+        y = fmap (MyCondNode' . That) (pushConditionals'B b)
      in x <> y
 
-pushB
+pushConditionals'B
     :: Semigroup a
     => NonEmpty (MyCondBranch' v (FieldMap a))
     -> FieldMap (NonEmpty (MyCondBranch' v a))
-pushB = foldMap1 $ \case
-    MyCondBranch' c (This t) ->
-        fmap (NE.singleton . MyCondBranch' c . This) (push t)
-    MyCondBranch' c (That t) ->
-        fmap (NE.singleton . MyCondBranch' c . That) (push t)
-    MyCondBranch' c (These t f) ->
-        fmap (NE.singleton . MyCondBranch' c . This) (push t)
-            <> fmap (NE.singleton . MyCondBranch' c . That) (push f)
+pushConditionals'B = foldMap1 $ \(MyCondBranch' c theseTrees) ->
+    bifoldMap
+        (fmap (NE.singleton . MyCondBranch' c . This) . pushConditionals')
+        (fmap (NE.singleton . MyCondBranch' c . That) . pushConditionals')
+        theseTrees
+
+-- case theseTrees of
+--     (This t) ->
+--         fmap (NE.singleton . MyCondBranch' c . This) $ pushConditionals' t
+--     (That t) ->
+--         fmap (NE.singleton . MyCondBranch' c . That) $ pushConditionals' t
+--     (These t f) ->
+--         (fmap (NE.singleton . MyCondBranch' c . This) $ pushConditionals' t)
+--             <> (fmap (NE.singleton . MyCondBranch' c . That) $ pushConditionals' f)
 
 convertCondTree' :: CondTree v c a -> MyCondTree' v a
 convertCondTree' = go

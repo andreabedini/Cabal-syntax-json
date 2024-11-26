@@ -10,37 +10,27 @@ import System.Console.GetOpt
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 
-import Data.Map qualified as Map
-import Text.PrettyPrint (Doc, text)
-
 import Distribution.Compiler (CompilerId (..))
-import Distribution.Fields (PrettyField)
 import Distribution.Fields.Pretty (CommentPosition (..), showFields)
 import Distribution.Parsec
-import Distribution.Simple.Utils (fromUTF8LBS)
 import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
 import Distribution.Types.PackageDescription (PackageDescription (..))
-import Distribution.Types.UnqualComponentName (UnqualComponentName, unUnqualComponentName)
 import Distribution.Utils.Json
 import Distribution.Verbosity qualified as Verbosity
 
 import Compat
 import CondTree
     ( Env (..)
-    , MyCondBranch (..)
-    , MyCondBranch' (..)
-    , MyCondTree (..)
     , MyCondTree' (..)
     -- , pushConditionals
 
     , banner
     , convertCondTree'
-    , push
-    , pushB
+    , pushConditionals'
     , pushConditionalsOld
     , simplifyGenericPackageDescription
     )
@@ -52,11 +42,8 @@ import FieldMap (FieldMap (..), fromList)
 import GenericPackageDescription
     ( Components (..)
     , GPD (..)
-    , Tree (..)
-    , foldTree
     , runGenericPackageDescription
     )
-import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
 import Pretty (prettyField)
 
@@ -167,7 +154,7 @@ doOne Opts{..} fn = do
     putStrLn $ showFields (const NoComment) $ prettyField components1
 
     let components2 :: Components (FieldMap (MyCondTree' ConfVar (Fragment Json)))
-        components2 = fmap push components1
+        components2 = fmap pushConditionals' components1
     putStrLn (banner "pushed")
     print $ pretty components2
 
@@ -236,5 +223,3 @@ testOld1 = pushConditionalsOld testOld
 
 testOld2 :: MyCondTree' ConfVar (FieldMap (NE.NonEmpty (Fragment Json)))
 testOld2 = convertCondTree' testOld
-
-testOld2' = push testOld2
