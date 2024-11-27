@@ -10,16 +10,18 @@ module FieldMap
     , foldMapWithKey
     ) where
 
-import Data.Align
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
 import Distribution.Fields.Pretty (CommentPosition (..), PrettyField (..), showFields)
 import Distribution.Pretty (Pretty (..))
 import Distribution.Utils.Generic (toUTF8BS)
 import Distribution.Utils.Json (Json (..))
+
+import Data.Align
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Text.PrettyPrint (text)
+
 import Json (ToJSON (..))
 import Pretty (PrettyFieldClass (..))
-import Text.PrettyPrint (text)
 
 newtype FieldMap v = FieldMap (Map String v)
     deriving (Show, Functor, Foldable, Traversable)

@@ -8,15 +8,13 @@ import Distribution.Compat.Lens (ALens', aview)
 import Distribution.Compat.Newtype (Newtype, pack')
 import Distribution.FieldGrammar (FieldGrammar (..), defaultFreeTextFieldDefST)
 import Distribution.Fields (FieldName)
+import Distribution.Pretty (Pretty (..))
 import Distribution.Utils.Generic (fromUTF8BS, fromUTF8LBS)
 import Distribution.Utils.Json (Json (..), renderJson)
 import Distribution.Utils.ShortText qualified as ST
 
-import Distribution.Fields.Pretty (PrettyField (..))
-import Distribution.Pretty (Pretty (..))
 import FieldMap (FieldMap, singleton)
 import Json (ToJSON (..))
-import Pretty (PrettyFieldClass (..))
 import Text.PrettyPrint (Doc, text, vcat)
 
 --

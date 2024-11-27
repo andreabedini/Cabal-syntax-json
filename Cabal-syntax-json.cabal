@@ -24,6 +24,7 @@ executable cabal2json
                     Json
                     JsonFieldGrammar
                     Pretty
+                    Crosswalk
   hs-source-dirs:   app
   default-language: GHC2021
   default-extensions: LambdaCase

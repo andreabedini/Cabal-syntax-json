@@ -16,7 +16,6 @@ import System.Environment (getArgs)
 import System.Exit (exitFailure)
 
 import Distribution.Compiler (CompilerId (..))
-import Distribution.Fields.Pretty (CommentPosition (..), showFields)
 import Distribution.Parsec (Parsec, eitherParsec)
 import Distribution.System (Arch (..), OS (..), Platform (..))
 import Distribution.Types.CondTree (CondTree (..))
@@ -29,17 +28,16 @@ import Distribution.Utils.Json (Json (..), renderJson, (.=))
 import Distribution.Verbosity qualified as Verbosity
 
 import Data.ByteString.Lazy qualified as BL
-import Distribution.Pretty (Pretty (..))
 
 import Compat (makeSymbolicPath, readGenericPackageDescription)
 import CondTree
     ( Cond
     , Env (..)
-    , MyCondTree' (..)
-    , banner
-    , convertCondTree'
-    , flattenCondTree'
-    , pushConditionals'
+    , MyCondTree (..)
+    , convertCondTree
+    , defragC
+    , flattenCondTree
+    , pushConditionals
     , simplifyGenericPackageDescription
     )
 import FieldMap (FieldMap (..), toList)
@@ -51,7 +49,6 @@ import GenericPackageDescription
     )
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
-import Pretty (prettyField)
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -155,25 +152,26 @@ doOne Opts{..} fn = do
                 (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
         GPD top components0 = runGenericPackageDescription v simplifiedGpd
 
-    putStrLn "original"
-    putStrLn $ showFields (const NoComment) $ prettyField components0
+    -- putStrLn "original"
+    -- putStrLn $ showFields (const NoComment) $ prettyField components0
 
-    let components1 :: Components (MyCondTree' ConfVar (FieldMap (Fragment Json)))
-        components1 = fmap convertCondTree' components0
-    putStrLn (banner "converted")
-    putStrLn $ showFields (const NoComment) $ prettyField components1
+    let components1 :: Components (MyCondTree ConfVar (FieldMap (Fragment Json)))
+        components1 = fmap convertCondTree components0
+    -- putStrLn (banner "converted")
+    -- putStrLn $ showFields (const NoComment) $ prettyField components1
 
-    let components2 :: Components (FieldMap (MyCondTree' ConfVar (Fragment Json)))
-        components2 = fmap pushConditionals' components1
-    putStrLn (banner "pushed")
-    print $ pretty components2
+    let components2 :: Components (FieldMap (MyCondTree ConfVar (Fragment Json)))
+        components2 = fmap pushConditionals components1
+    -- putStrLn (banner "pushed")
+    -- print $ pretty components2
 
     let components3 :: Components (FieldMap (Cond ConfVar (Fragment Json)))
-        components3 = fmap (fmap flattenCondTree') components2
-    putStrLn (banner "flattened")
-    print $ pretty components3
+        components3 = fmap (fmap flattenCondTree) components2
+    -- putStrLn (banner "flattened")
+    -- print $ pretty components3
 
-    -- let json = toJSON components3
+    let components4 :: Components (FieldMap Json)
+        components4 = fmap (fmap defragC) components3
 
     let json =
             JsonObject $
@@ -184,13 +182,11 @@ doOne Opts{..} fn = do
                         (\exes -> [("executables" .= toJSON exes) | not (null exes)])
                         (\tests -> [("test-suites" .= toJSON tests) | not (null tests)])
                         (\benchs -> [("benchmarks" .= toJSON benchs) | not (null benchs)])
-                        components3
-
-    -- let json =
-    --         JsonObject $
-    --             mconcat
-    --                 [ [(name, toJSON value) | (name, value) <- FieldMap.toList top]
-    --                 , [(name, toJSON value) | (name, value) <- middle ++ components2]
-    --                 ]
+                        components4
 
     maybe BL.putStr BL.writeFile optsOutput $ renderJson json
+
+-- banner :: [Char] -> String
+-- banner name =
+--     unlines
+--         ["", replicate (length name + 8) '-', unwords ["---", name, "---"], replicate (length name + 8) '-']

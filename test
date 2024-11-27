@@ -24,7 +24,9 @@ executable cabal2json
                     JsonFieldGrammar
                     Pretty
   hs-source-dirs:   app
-  default-language: GHC2021
+  default-language: Haskl2010
+  if impl(GHC)
+    default-language: GHC2021
   default-extensions: LambdaCase
 
 test-suite golden-tests
