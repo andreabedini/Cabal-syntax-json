@@ -40,7 +40,7 @@ import CondTree
     , pushConditionals
     , simplifyGenericPackageDescription
     )
-import FieldMap (FieldMap (..), toList)
+import FieldMap (FieldMap, toList)
 import GenericPackageDescription
     ( Components (..)
     , GPD (..)

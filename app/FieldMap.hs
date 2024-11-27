@@ -1,7 +1,7 @@
 {-# LANGUAGE DerivingVia #-}
 
 module FieldMap
-    ( FieldMap (..)
+    ( FieldMap
     , singleton
     , toList
     , fromList
