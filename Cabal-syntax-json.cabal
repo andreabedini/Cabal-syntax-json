@@ -13,10 +13,7 @@ executable cabal2json
                   , containers
                   , Cabal        ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
                   , Cabal-syntax ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
-                  , semialign
                   , pretty
-                  , pretty-simple
-                  , these
   other-modules:    Compat
                     CondTree
                     FieldMap
@@ -24,7 +21,6 @@ executable cabal2json
                     Json
                     JsonFieldGrammar
                     Pretty
-                    Crosswalk
   hs-source-dirs:   app
   default-language: GHC2021
   default-extensions: LambdaCase

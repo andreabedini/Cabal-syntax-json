@@ -42,12 +42,9 @@ import Distribution.Types.Version (nullVersion)
 import Distribution.Types.VersionRange (withinRange)
 import Distribution.Utils.Json (Json (..), (.=))
 
-import Data.Semialign (Semialign (..))
-import Data.These (These (..), these)
-import Data.These.Combinators (justHere, justThere)
 import Text.PrettyPrint hiding ((<>))
 
-import FieldMap (FieldMap)
+import FieldMap (FieldMap, These (..), alignWith, justHere, justThere, these)
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
 import Pretty (PrettyFieldClass (..), Vertically (..), ppCondition, prettySection)
@@ -305,7 +302,7 @@ pushConditionals'B = foldMap1 $ \case
             (\t -> NE.singleton $ MyCondBranch c t Nothing)
             (pushConditionals thenTree)
     (MyCondBranch c thenTree (Just elseTree)) ->
-        alignWith
+        FieldMap.alignWith
             ( these
                 (\t -> NE.singleton $ MyCondBranch c t Nothing)
                 (\t -> NE.singleton $ MyCondBranch (cNot c) t Nothing)
