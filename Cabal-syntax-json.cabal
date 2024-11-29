@@ -27,13 +27,22 @@ executable cabal2json
 
 test-suite golden-tests
   main-is:            Tests.hs
+  other-modules:      Compat
+                      FieldMap
+                      Json
+                      Pretty
   build-depends:    , base
                     , bytestring
+                    , Cabal
                     , Cabal-syntax
+                    , containers
                     , filepath
+                    , pretty
                     , process
                     , tasty
+                    , tasty-hunit
                     , tasty-golden
   build-tool-depends: Cabal-syntax-json:cabal2json
   hs-source-dirs:     tests
+                    , app
   default-language:   GHC2021

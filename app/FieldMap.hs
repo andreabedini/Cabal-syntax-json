@@ -36,7 +36,7 @@ import Json (ToJSON (..))
 import Pretty (PrettyFieldClass (..))
 
 newtype FieldMap v = FieldMap [(String, v)]
-    deriving (Show, Functor, Foldable, Traversable)
+    deriving (Eq, Show, Functor, Foldable, Traversable)
 
 singleton :: String -> v -> FieldMap v
 singleton k v = FieldMap [(k, v)]
@@ -77,7 +77,7 @@ unionWith f (FieldMap lm) (FieldMap rm) =
 --     go [] rs = rs
 
 data These a b = This a | That b | These a b
-    deriving Show
+    deriving (Eq, Show)
 
 instance (Semigroup a, Semigroup b) => Semigroup (These a b) where
     This a <> This b = This (a <> b)
