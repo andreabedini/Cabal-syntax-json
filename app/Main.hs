@@ -40,6 +40,9 @@ import CondTree
     , pushConditionals
     , simplifyGenericPackageDescription
     )
+
+-- import Distribution.Fields.Pretty (CommentPosition (..), showFields)
+-- import Distribution.Pretty (Pretty (..))
 import FieldMap (FieldMap, toList)
 import GenericPackageDescription
     ( Components (..)
@@ -49,6 +52,8 @@ import GenericPackageDescription
     )
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
+
+-- import Pretty (PrettyFieldClass (..))
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -157,16 +162,19 @@ doOne Opts{..} fn = do
 
     let components1 :: Components (MyCondTree ConfVar (FieldMap (Fragment Json)))
         components1 = fmap convertCondTree components0
+
     -- putStrLn (banner "converted")
     -- putStrLn $ showFields (const NoComment) $ prettyField components1
 
     let components2 :: Components (FieldMap (MyCondTree ConfVar (Fragment Json)))
         components2 = fmap pushConditionals components1
+
     -- putStrLn (banner "pushed")
     -- print $ pretty components2
 
     let components3 :: Components (FieldMap (Cond ConfVar (Fragment Json)))
         components3 = fmap (fmap flattenCondTree) components2
+
     -- putStrLn (banner "flattened")
     -- print $ pretty components3
 

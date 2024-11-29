@@ -36,17 +36,25 @@ import Distribution.Types.PackageDescription (PackageDescription (..))
 import Distribution.Types.PackageId (PackageIdentifier (..))
 import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.SourceRepo (SourceRepo (..))
-import Distribution.Types.UnqualComponentName (UnqualComponentName, mkUnqualComponentName)
+import Distribution.Types.UnqualComponentName
+    ( UnqualComponentName
+    , mkUnqualComponentName
+    , unUnqualComponentName
+    )
 import Distribution.Utils.Json (Json (..), (.=))
 
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 
 import CondTree (MyCondBranch (..), MyCondTree (..))
-import Distribution.Pretty (prettyShow)
+import Distribution.Fields (showFields)
+import Distribution.Fields.Pretty (CommentPosition (..), PrettyField)
+import Distribution.Pretty (Pretty (..), prettyShow)
 import FieldMap (FieldMap, fromList)
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..), JSONFieldGrammar, jsonFieldGrammar)
+import Pretty (PrettyFieldClass (..), prettySection)
+import Text.PrettyPrint (text)
 
 -- import Pretty (PrettyFieldClass (..), prettySection)
 -- import Text.PrettyPrint (text)
@@ -87,21 +95,21 @@ foldComponents
 foldComponents f1 f2 f3 f4 f5 (Components lib flib exe test bench) =
     f1 lib <> f2 flib <> f3 exe <> f4 test <> f5 bench
 
--- instance PrettyFieldClass a => PrettyFieldClass (Components a) where
---     prettyField (Components libs flibs exes tests benchs) =
---         mconcat
---             [ [prettySection "libraries" [] (Map.foldMapWithKey f libs) | not (null libs)]
---             , [prettySection "foreign-libraries" [] (Map.foldMapWithKey f flibs) | not (null flibs)]
---             , [prettySection "executables" [] (Map.foldMapWithKey f exes) | not (null exes)]
---             , [prettySection "test-suites" [] (Map.foldMapWithKey f tests) | not (null tests)]
---             , [prettySection "benchmarks" [] (Map.foldMapWithKey f benchs) | not (null benchs)]
---             ]
---       where
---         f :: PrettyFieldClass b => UnqualComponentName -> b -> [PrettyField ()]
---         f k c = [prettySection (unUnqualComponentName k) [] (prettyField c)]
+instance PrettyFieldClass a => PrettyFieldClass (Components a) where
+    prettyField (Components libs flibs exes tests benchs) =
+        mconcat
+            [ [prettySection "libraries" [] (Map.foldMapWithKey f libs) | not (null libs)]
+            , [prettySection "foreign-libraries" [] (Map.foldMapWithKey f flibs) | not (null flibs)]
+            , [prettySection "executables" [] (Map.foldMapWithKey f exes) | not (null exes)]
+            , [prettySection "test-suites" [] (Map.foldMapWithKey f tests) | not (null tests)]
+            , [prettySection "benchmarks" [] (Map.foldMapWithKey f benchs) | not (null benchs)]
+            ]
+      where
+        f :: PrettyFieldClass b => UnqualComponentName -> b -> [PrettyField ()]
+        f k c = [prettySection (unUnqualComponentName k) [] (prettyField c)]
 
--- instance PrettyFieldClass a => Pretty (Components a) where
---     pretty = text . showFields (const NoComment) . prettyField
+instance PrettyFieldClass a => Pretty (Components a) where
+    pretty = text . showFields (const NoComment) . prettyField
 
 -- | Transform a GenericPackageDescription into our representation.
 -- This step already transform types associated with a field grammar into FieldMap (Fragment Json).

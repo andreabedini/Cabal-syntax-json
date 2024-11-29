@@ -61,20 +61,41 @@ pop n l = (fmap snd (safeHead matches), rest)
   where
     (matches, rest) = partition ((n ==) . fst) l
 
-unionWith :: (v -> v -> v) -> FieldMap v -> FieldMap v -> FieldMap v
-unionWith f (FieldMap lm) (FieldMap rm) =
-    FieldMap
-        [ (n, maybe l (f l) (Prelude.lookup n rm))
-        | (n, l) <- lm
-        ]
+align :: FieldMap b -> FieldMap c -> FieldMap (These b c)
+align (FieldMap lm) (FieldMap rm) = FieldMap $ go lm rm
+  where
+    go :: Eq a => [(a, b)] -> [(a, c)] -> [(a, These b c)]
+    go ((ln, lv) : ls) rs =
+        case pop ln rs of
+            (Nothing, rest) ->
+                (ln, This lv) : go ls rest
+            (Just rv, rest) ->
+                (ln, These lv rv) : go ls rest
+    go [] rs = [(rn, That rv) | (rn, rv) <- rs]
 
--- merge :: Eq a => (b -> b -> b) -> [(a, b)] -> [(a, b)] -> [(a, b)]
--- merge f = go
---   where
---     go ((ln, lv) : ls) rs =
---         let (matches, rest) = partition ((ln ==) . fst) rs
---          in (ln, foldr f lv (map snd matches)) : go ls rest
---     go [] rs = rs
+alignWith :: (These b c -> v) -> FieldMap b -> FieldMap c -> FieldMap v
+alignWith f lm rm = fmap f $ align lm rm
+
+unionWith :: (v -> v -> v) -> FieldMap v -> FieldMap v -> FieldMap v
+unionWith f l r = alignWith (these id id f) l r
+
+foldMapWithKey :: Monoid m => (String -> a -> m) -> FieldMap a -> m
+foldMapWithKey f (FieldMap lm) = foldMap (uncurry f) lm
+
+instance Semigroup v => Semigroup (FieldMap v) where
+    (<>) = unionWith (<>)
+
+instance Semigroup v => Monoid (FieldMap v) where
+    mempty = FieldMap mempty
+
+instance ToJSON v => ToJSON (FieldMap v) where
+    toJSON (FieldMap m) = JsonObject [(k, toJSON v) | (k, v) <- m]
+
+instance Pretty a => PrettyFieldClass (FieldMap a) where
+    prettyField (FieldMap m) = [PrettyField () (toUTF8BS n) (pretty a) | (n, a) <- m]
+
+instance Pretty a => Pretty (FieldMap a) where
+    pretty = text . showFields (const NoComment) . prettyField
 
 data These a b = This a | That b | These a b
     deriving (Eq, Show)
@@ -143,21 +164,6 @@ justThere (This _) = Nothing
 justThere (That b) = Just b
 justThere (These _ b) = Just b
 
-align :: FieldMap b -> FieldMap c -> FieldMap (These b c)
-align (FieldMap lm) (FieldMap rm) = FieldMap $ go lm rm
-  where
-    go :: Eq a => [(a, b)] -> [(a, c)] -> [(a, These b c)]
-    go ((ln, lv) : ls) rs =
-        case pop ln rs of
-            (Nothing, rest) ->
-                (ln, This lv) : go ls rest
-            (Just rv, rest) ->
-                (ln, These lv rv) : go ls rest
-    go [] rs = [(rn, That rv) | (rn, rv) <- rs]
-
-alignWith :: (These b c -> v) -> FieldMap b -> FieldMap c -> FieldMap v
-alignWith f lm rm = fmap f $ align lm rm
-
 -- align :: forall a b c. Eq a => [(a, b)] -> [(a, c)] -> [(a, These b c)]
 -- align = go
 --   where
@@ -169,28 +175,3 @@ alignWith f lm rm = fmap f $ align lm rm
 --             ((_, rv) : _ignored, rest) ->
 --                 (ln, These lv rv) : go ls rest
 --     go [] rs = [(rn, That rv) | (rn, rv) <- rs]
-
-foldMapWithKey :: Monoid m => (String -> a -> m) -> FieldMap a -> m
-foldMapWithKey f (FieldMap lm) = foldMap (uncurry f) lm
-
-instance Semigroup v => Semigroup (FieldMap v) where
-    (<>) = unionWith (<>)
-
-instance Semigroup v => Monoid (FieldMap v) where
-    mempty = FieldMap mempty
-
-instance ToJSON v => ToJSON (FieldMap v) where
-    toJSON (FieldMap m) = JsonObject [(k, toJSON v) | (k, v) <- m]
-
-instance Pretty a => PrettyFieldClass (FieldMap a) where
-    prettyField (FieldMap m) = [PrettyField () (toUTF8BS n) (pretty a) | (n, a) <- m]
-
-instance Pretty a => Pretty (FieldMap a) where
-    pretty = text . showFields (const NoComment) . prettyField
-
--- deriving via Map String instance Semialign FieldMap
--- deriving via Map String instance Align FieldMap
-
--- .merge (Map.mapMissing (\_ x ->  f (This x)))
---                             (Map.mapMissing (\_ y ->  f (That y)))
---                             (Map.zipWithMatched (\_ x y -> f (These x y)))
