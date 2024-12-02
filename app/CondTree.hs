@@ -26,7 +26,7 @@ import Data.Either (partitionEithers)
 import Data.Foldable1 (Foldable1 (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, mapMaybe, maybeToList)
 
 import Distribution.Compat.Newtype
 import Distribution.Compiler (CompilerId (..))
@@ -193,6 +193,9 @@ data MyCondTree v a = MyCondNode (These a (NonEmpty (MyCondBranch v a)))
 instance Semigroup a => Semigroup (MyCondTree v a) where
     MyCondNode tl <> MyCondNode tr = MyCondNode (tl <> tr)
 
+instance Monoid a => Monoid (MyCondTree v a) where
+    mempty = MyCondNode (This mempty)
+
 instance Functor (MyCondTree v) where
     fmap f (MyCondNode t) = MyCondNode (bimap f (fmap (fmap f)) t)
 
@@ -263,33 +266,56 @@ pushConditionals
     :: Semigroup a
     => MyCondTree v (ListMap String a)
     -> ListMap String (MyCondTree v a)
-pushConditionals (MyCondNode (This a)) =
-    fmap (MyCondNode . This) a
-pushConditionals (MyCondNode (That b)) =
-    fmap (MyCondNode . That) (pushConditionals'B b)
-pushConditionals (MyCondNode (These a b)) =
-    let x = fmap (MyCondNode . This) a
-        y = fmap (MyCondNode . That) (pushConditionals'B b)
-     in x <> y
+pushConditionals = go
+  where
+    go (MyCondNode (This a)) =
+        fmap (MyCondNode . This) a
+    go (MyCondNode (That b)) =
+        fmap (MyCondNode . That) (foldMap1 goBranch b)
+    go (MyCondNode (These a b)) =
+        let x = fmap (MyCondNode . This) a
+            y = fmap (MyCondNode . That) (foldMap1 goBranch b)
+         in x <> y
 
-pushConditionals'B
-    :: Semigroup a
-    => NonEmpty (MyCondBranch v (ListMap String a))
-    -> ListMap String (NonEmpty (MyCondBranch v a))
-pushConditionals'B = foldMap1 $ \case
-    (MyCondBranch c thenTree Nothing) ->
+    goBranch
+        :: Semigroup a
+        => MyCondBranch v (ListMap String a)
+        -> ListMap String (NonEmpty (MyCondBranch v a))
+    goBranch (MyCondBranch c thenTree Nothing) =
         fmap
             (\t -> NE.singleton $ MyCondBranch c t Nothing)
             (pushConditionals thenTree)
-    (MyCondBranch c thenTree (Just elseTree)) ->
+    goBranch (MyCondBranch c thenTree (Just elseTree)) =
         alignWith
-            ( these
-                (\t -> NE.singleton $ MyCondBranch c t Nothing)
-                (\t -> NE.singleton $ MyCondBranch (cNot c) t Nothing)
-                (\t f -> NE.singleton $ MyCondBranch c t (Just f))
+            ( \case
+                This t -> NE.singleton $ MyCondBranch c t Nothing
+                That e -> NE.singleton $ MyCondBranch (cNot c) e Nothing
+                These t e -> NE.singleton $ MyCondBranch c t (Just e)
             )
             (pushConditionals thenTree)
             (pushConditionals elseTree)
+
+-- | Simplifies a MyCondTree using a partial flag assignment. MyConditions that cannot be evaluated are left untouched.
+simplifyMyCondTree
+    :: forall v a
+     . Monoid a
+    => (v -> Either v Bool)
+    -> MyCondTree v a
+    -> MyCondTree v a
+simplifyMyCondTree eval = go
+  where
+    go :: MyCondTree v a -> MyCondTree v a
+    go (MyCondNode (This a)) = MyCondNode (This a)
+    go (MyCondNode (That bs)) = foldMap1 goBranch bs
+    go (MyCondNode (These a bs)) = MyCondNode (This a) <> foldMap1 goBranch bs
+
+    goBranch :: MyCondBranch v a -> MyCondTree v a
+    goBranch (MyCondBranch c thenTree mElseTree) =
+        case fst (simplifyCondition c eval) of
+            (Lit True) -> go thenTree
+            (Lit False) -> maybe mempty go mElseTree
+            c' ->
+                MyCondNode $ That $ NE.singleton $ MyCondBranch c' (go thenTree) (fmap go mElseTree)
 
 convertCondTree :: CondTree v c a -> MyCondTree v a
 convertCondTree (CondNode a _ ifs) =
