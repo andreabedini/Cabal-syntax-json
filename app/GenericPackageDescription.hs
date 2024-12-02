@@ -2,7 +2,6 @@
 
 module GenericPackageDescription
     ( runGenericPackageDescription
-    , GPD (..)
     , CondTree'
     , MyCondTree (..)
     , MyCondBranch (..)
@@ -25,6 +24,8 @@ import Distribution.PackageDescription.FieldGrammar
     , unvalidateBenchmark
     , unvalidateTestSuite
     )
+import Distribution.Pretty (prettyShow)
+import Distribution.Types.ComponentName
 import Distribution.Types.CondTree (CondTree)
 import Distribution.Types.ConfVar (ConfVar)
 import Distribution.Types.Dependency (Dependency)
@@ -36,15 +37,15 @@ import Distribution.Types.SourceRepo (SourceRepo (..))
 import Distribution.Utils.Json (Json (..))
 
 import CondTree (MyCondBranch (..), MyCondTree (..))
-import Distribution.Pretty (prettyShow)
-import Distribution.Types.ComponentName
-import FieldMap (FieldMap, fromList, union)
 import Json (ToJSON (..))
-import JsonFieldGrammar (Fragment (..), JSONFieldGrammar, jsonFieldGrammar)
-
-data GPD a b = GPD a [(ComponentName, b)]
+import JsonFieldGrammar (Fragment (..), jsonFieldGrammar, jsonFieldGrammar')
+import ListMap (ListMap)
+import ListMap qualified
 
 type CondTree' a = CondTree ConfVar [Dependency] a
+
+type FieldMap = ListMap String
+type ComponentMap = ListMap ComponentName
 
 -- | Transform a GenericPackageDescription into our representation.
 -- This step already transform types associated with a field grammar into FieldMap (Fragment Json).
@@ -52,62 +53,55 @@ type CondTree' a = CondTree ConfVar [Dependency] a
 runGenericPackageDescription
     :: CabalSpecVersion
     -> GenericPackageDescription
-    -> GPD
-        (FieldMap Json)
-        (CondTree' (FieldMap (Fragment Json)))
-runGenericPackageDescription v gpd = GPD meta components
+    -> ( (FieldMap Json)
+       , ComponentMap
+            (CondTree' (FieldMap (Fragment Json)))
+       )
+runGenericPackageDescription v gpd = (meta, components)
   where
-    -- The output of a field grammar always has unique field names so it can turned into
-    -- field map right away (and soon into a json object)
-    pd = jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
-
+    meta :: ListMap String Json
     meta =
-        FieldMap.union
-            (fmap toJSON pd)
-            ( FieldMap.fromList $
-                mconcat
-                    [ [ ( "custom-setup"
-                        , toJSON (jsonFieldGrammar v (setupBInfoFieldGrammar False) sbi)
-                        )
-                      | sbi <- maybeToList (setupBuildInfo (packageDescription gpd))
-                      ]
-                    , [ ( "source-repositories"
-                        , mkJsonObject v (prettyShow . repoKind) (sourceRepoFieldGrammar . repoKind) repos
-                        )
-                      | let repos = sourceRepos (packageDescription gpd)
-                      , not (null repos)
-                      ]
-                    , [ ( "flags"
-                        , mkJsonObject v (unFlagName . flagName) (flagFieldGrammar . flagName) flags
-                        )
-                      | let flags = genPackageFlags gpd
-                      , not (null flags)
-                      ]
-                    ]
-            )
+        ListMap.fromList $
+            mconcat
+                [ -- The output of a field grammar always has unique field names so it can turned into
+                  -- field map right away (and soon into a json object)
+                  fmap (fmap toJSON) $
+                    jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
+                , [ ( "custom-setup"
+                    , jsonFieldGrammar' v (setupBInfoFieldGrammar False) sbi
+                    )
+                  | sbi <- maybeToList (setupBuildInfo (packageDescription gpd))
+                  ]
+                , [ ("source-repositories", sourceRepos2json v repos)
+                  | let repos = sourceRepos (packageDescription gpd)
+                  , not (null repos)
+                  ]
+                , [ ("flags", flags2json v flags)
+                  | let flags = genPackageFlags gpd
+                  , not (null flags)
+                  ]
+                ]
 
     components =
-        mconcat
-            [ [ (CLibName n, fmap (jsonFieldGrammar v (libraryFieldGrammar n)) c)
-              | (n, c) <- libs
-              ]
-            , [ (CFLibName n, fmap (jsonFieldGrammar v (foreignLibFieldGrammar n)) c)
-              | (n, c) <- condForeignLibs gpd
-              ]
-            , [ (CExeName n, fmap (jsonFieldGrammar v (executableFieldGrammar n)) c)
-              | (n, c) <- condExecutables gpd
-              ]
-            , [ (CTestName n, fmap (jsonFieldGrammar v testSuiteFieldGrammar) c)
-              | (n, c) <- tests
-              ]
-            , [ (CBenchName n, fmap (jsonFieldGrammar v benchmarkFieldGrammar) c)
-              | (n, c) <- benchmarks
-              ]
-            ]
-
-    -- pn = pkgName $ package $ packageDescription gpd
-
-    -- libraryName = fromMaybe (mkUnqualComponentName $ unPackageName pn) . libraryNameString
+        ListMap.fromList $
+            fmap (fmap (fmap ListMap.fromList)) $
+                mconcat
+                    [ [ (CLibName n, fmap (jsonFieldGrammar v (libraryFieldGrammar n)) c)
+                      | (n, c) <- libs
+                      ]
+                    , [ (CFLibName n, fmap (jsonFieldGrammar v (foreignLibFieldGrammar n)) c)
+                      | (n, c) <- condForeignLibs gpd
+                      ]
+                    , [ (CExeName n, fmap (jsonFieldGrammar v (executableFieldGrammar n)) c)
+                      | (n, c) <- condExecutables gpd
+                      ]
+                    , [ (CTestName n, fmap (jsonFieldGrammar v testSuiteFieldGrammar) c)
+                      | (n, c) <- tests
+                      ]
+                    , [ (CBenchName n, fmap (jsonFieldGrammar v benchmarkFieldGrammar) c)
+                      | (n, c) <- benchmarks
+                      ]
+                    ]
 
     libs =
         concat
@@ -125,14 +119,20 @@ runGenericPackageDescription v gpd = GPD meta components
         | (ucn, b) <- condBenchmarks gpd
         ]
 
-mkJsonObject
-    :: CabalSpecVersion
-    -> (s -> String)
-    -> (s -> JSONFieldGrammar s a)
-    -> [s]
-    -> Json
-mkJsonObject v mkName fg as =
+flags2json :: CabalSpecVersion -> [PackageFlag] -> Json
+flags2json v flags =
     JsonObject
-        [ (mkName a, toJSON $ jsonFieldGrammar v (fg a) a)
-        | a <- as
+        [ ( unFlagName (flagName f)
+          , jsonFieldGrammar' v (flagFieldGrammar (flagName f)) f
+          )
+        | f <- flags
+        ]
+
+sourceRepos2json :: CabalSpecVersion -> [SourceRepo] -> Json
+sourceRepos2json v repos =
+    JsonObject
+        [ ( prettyShow (repoKind r)
+          , jsonFieldGrammar' v (sourceRepoFieldGrammar (repoKind r)) r
+          )
+        | r <- repos
         ]

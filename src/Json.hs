@@ -2,7 +2,10 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Json where
+module Json
+    ( ToJSON (..)
+    , Pair
+    ) where
 
 import Data.Foldable (Foldable (..))
 import Data.Functor.Identity (Identity (Identity))
@@ -10,7 +13,6 @@ import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 
 import Distribution.Compat.Newtype (Newtype (unpack))
-import Distribution.Compat.Prelude qualified as NE
 import Distribution.Compiler (CompilerFlavor)
 import Distribution.FieldGrammar
     ( FilePathNT (..)
@@ -50,17 +52,11 @@ import Distribution.Types.PkgconfigName (PkgconfigName)
 import Distribution.Types.PkgconfigVersionRange (PkgconfigVersionRange)
 import Distribution.Types.SourceRepo (KnownRepoType, RepoType)
 import Distribution.Types.TestType (TestType)
-import Distribution.Types.UnqualComponentName
-    ( UnqualComponentName
-    , unUnqualComponentName
-    )
+import Distribution.Types.UnqualComponentName (UnqualComponentName)
 import Distribution.Types.Version (Version)
 import Distribution.Types.VersionRange (VersionRange)
 import Distribution.Utils.Json (Json (..), (.=))
 import Language.Haskell.Extension (Extension, Language)
-
-import Data.Map (Map)
-import Data.Map qualified as Map
 
 import Compat
     ( CompatDataDir (CompatDataDir)
@@ -188,11 +184,7 @@ instance ToJSON Dependency where
         JsonObject $
             [ "package" .= toJSON pn
             , "version" .= toJSON vr
-            , "libs"
-                .= JsonArray
-                    [ maybe (toJSON pn) toJSON (libraryNameString l)
-                    | l <- NE.toList libs
-                    ]
+            , "libs" .= JsonArray (map (maybe (toJSON pn) toJSON . libraryNameString) (toList libs))
             ]
 
 instance ToJSON PkgconfigDependency where
@@ -230,12 +222,6 @@ instance ToJSON a => ToJSON (NonEmpty a) where
 
 instance (ToJSON a, ToJSON b) => ToJSON (a, b) where
     toJSON (a, b) = JsonArray [toJSON a, toJSON b]
-
-instance ToJSON a => ToJSON (Map String a) where
-    toJSON = JsonObject . Map.foldMapWithKey (\k v -> [(k, toJSON v)])
-
-instance ToJSON a => ToJSON (Map UnqualComponentName a) where
-    toJSON = JsonObject . Map.foldMapWithKey (\k v -> [(unUnqualComponentName k, toJSON v)])
 
 deriving via (a :: Type) instance ToJSON a => ToJSON (Identity a)
 

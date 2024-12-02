@@ -6,44 +6,48 @@ author:          andrea@andreabedini.com
 maintainer:      Andrea Bedini
 build-type:      Simple
 
+library
+  build-depends:      base         ^>=4.16 || ^>=4.17 || ^>=4.18 || ^>=4.19 || ^>=4.20
+                    , bytestring   ^>=0.11 || ^>=0.12
+                    , containers
+                    , Cabal        ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
+                    , Cabal-syntax ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
+                    , pretty
+  exposed-modules:    Compat
+                      ListMap
+                      Json
+                      Pretty
+                      These
+  hs-source-dirs:     src
+  default-language:   GHC2021
+  default-extensions: LambdaCase
+
 executable cabal2json
-  main-is:          Main.hs
-  build-depends:    base         ^>=4.16 || ^>=4.17 || ^>=4.18 || ^>=4.19 || ^>=4.20
-                  , bytestring   ^>=0.11 || ^>=0.12
-                  , containers
-                  , Cabal        ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
-                  , Cabal-syntax ^>=3.10.3.0 || ^>=3.12.1.0 || ^>=3.14.0.0
-                  , pretty
-  other-modules:    Compat
-                    CondTree
-                    FieldMap
-                    GenericPackageDescription
-                    Json
-                    JsonFieldGrammar
-                    Pretty
-                    These
-  hs-source-dirs:   app
-  default-language: GHC2021
+  main-is:            Main.hs
+  build-depends:      base
+                    , bytestring
+                    , containers
+                    , Cabal
+                    , Cabal-syntax
+                    , Cabal-syntax-json
+                    , pretty
+  other-modules:      CondTree
+                      GenericPackageDescription
+                      JsonFieldGrammar
+  hs-source-dirs:     app
+  default-language:   GHC2021
   default-extensions: LambdaCase
 
 test-suite golden-tests
   main-is:            Tests.hs
-  other-modules:      Compat
-                      FieldMap
-                      Json
-                      Pretty
   build-depends:    , base
-                    , bytestring
-                    , Cabal
+                    , Cabal-syntax-json
                     , Cabal-syntax
-                    , containers
                     , filepath
-                    , pretty
                     , process
                     , tasty
                     , tasty-hunit
                     , tasty-golden
   build-tool-depends: Cabal-syntax-json:cabal2json
   hs-source-dirs:     tests
-                    , app
   default-language:   GHC2021

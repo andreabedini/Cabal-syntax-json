@@ -13,7 +13,7 @@ import Distribution.Utils.Generic (fromUTF8BS, fromUTF8LBS)
 import Distribution.Utils.Json (Json (..), renderJson)
 import Distribution.Utils.ShortText qualified as ST
 
-import FieldMap (FieldMap, singleton)
+import Data.Bifunctor (Bifunctor (..))
 import Json (ToJSON (..))
 import Text.PrettyPrint (Doc, text, vcat)
 
@@ -22,12 +22,15 @@ import Text.PrettyPrint (Doc, text, vcat)
 --
 
 newtype JSONFieldGrammar s a = JsonFG
-    { runJsonFieldGrammar :: CabalSpecVersion -> s -> FieldMap (Fragment Json)
+    { runJsonFieldGrammar :: CabalSpecVersion -> s -> [(String, Fragment Json)]
     }
     deriving Functor
 
-jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> FieldMap (Fragment Json)
+jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> [(String, Fragment Json)]
 jsonFieldGrammar v fg = runJsonFieldGrammar fg v
+
+jsonFieldGrammar' :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> Json
+jsonFieldGrammar' v fg = JsonObject . map (second toJSON) . jsonFieldGrammar v fg
 
 instance Applicative (JSONFieldGrammar s) where
     pure _ = JsonFG (\_ _ -> mempty)
@@ -48,7 +51,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> ALens' s a
         -> JSONFieldGrammar s a
     uniqueFieldAla fn _pack l = JsonFG $ \_ ->
-        scalarFragment fn . toJSON . pack' _pack . aview l
+        pure . scalarFragment fn . toJSON . pack' _pack . aview l
 
     booleanFieldDef
         :: FieldName
@@ -59,7 +62,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         let b = aview l s
          in if b == def
                 then mempty
-                else scalarFragment fn (toJSON b)
+                else [scalarFragment fn (toJSON b)]
 
     optionalFieldAla
         :: (ToJSON b, Newtype a b)
@@ -68,7 +71,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> ALens' s (Maybe a)
         -> JSONFieldGrammar s (Maybe a)
     optionalFieldAla fn _pack l = JsonFG $ \_ ->
-        maybe mempty (scalarFragment fn . toJSON . pack' _pack) . aview l
+        maybe mempty (pure . scalarFragment fn . toJSON . pack' _pack) . aview l
 
     optionalFieldDefAla
         :: (ToJSON b, Newtype a b, Eq a)
@@ -81,14 +84,14 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         let x = aview l s
          in if x == def
                 then mempty
-                else scalarFragment fn (toJSON (pack' _pack x))
+                else [scalarFragment fn (toJSON (pack' _pack x))]
 
     freeTextField
         :: FieldName
         -> ALens' s (Maybe String)
         -> JSONFieldGrammar s (Maybe String)
     freeTextField fn l = JsonFG $ \_ ->
-        maybe mempty (scalarFragment fn . toJSON) . aview l
+        maybe mempty (pure . scalarFragment fn . toJSON) . aview l
 
     freeTextFieldDef
         :: FieldName
@@ -98,7 +101,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         let x = aview l s
          in if x == ""
                 then mempty
-                else scalarFragment fn (JsonString x)
+                else [scalarFragment fn (JsonString x)]
 
     freeTextFieldDefST
         :: FieldName
@@ -114,15 +117,17 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> JSONFieldGrammar s a
     monoidalFieldAla fn _pack l = JsonFG $ \_ s ->
         case toJSON (pack' _pack $ aview l s) of
-            JsonArray js -> foldMap (listlikeFragment fn) (NE.nonEmpty js)
-            j -> listlikeFragment fn (NE.singleton j)
+            JsonArray js -> foldMap (pure . listlikeFragment fn) (NE.nonEmpty js)
+            j -> [listlikeFragment fn (NE.singleton j)]
 
     prefixedFields
         :: FieldName
         -> ALens' s [(String, String)]
         -> JSONFieldGrammar s [(String, String)]
     prefixedFields fnPfx l = JsonFG $ \_ kv ->
-        mconcat [scalarFragment' (fromUTF8BS fnPfx ++ fn) (JsonString s) | (fn, s) <- aview l kv]
+        foldMap
+            (\(fn, s) -> [scalarFragment' (fromUTF8BS fnPfx ++ fn) (JsonString s)])
+            (aview l kv)
 
     knownField :: FieldName -> JSONFieldGrammar s ()
     knownField _fn =
@@ -176,11 +181,11 @@ instance Pretty (Fragment Json) where
 prettyJson :: Json -> Doc
 prettyJson = text . fromUTF8LBS . renderJson
 
-scalarFragment :: FieldName -> a -> FieldMap (Fragment a)
-scalarFragment fn v = singleton (fromUTF8BS fn) (ScalarFragment v)
+scalarFragment :: FieldName -> a -> (String, Fragment a)
+scalarFragment fn v = (fromUTF8BS fn, ScalarFragment v)
 
-scalarFragment' :: String -> a -> FieldMap (Fragment a)
-scalarFragment' fn v = singleton fn (ScalarFragment v)
+scalarFragment' :: String -> a -> (String, Fragment a)
+scalarFragment' fn v = (fn, ScalarFragment v)
 
-listlikeFragment :: FieldName -> NonEmpty a -> FieldMap (Fragment a)
-listlikeFragment fn vs = singleton (fromUTF8BS fn) (ListLikeFragment vs)
+listlikeFragment :: FieldName -> NonEmpty a -> (String, Fragment a)
+listlikeFragment fn vs = (fromUTF8BS fn, ListLikeFragment vs)

@@ -43,14 +43,13 @@ import CondTree
     )
 
 import Distribution.Fields.Pretty (CommentPosition (..), PrettyField (..), showFields)
-import FieldMap (FieldMap, singleton, union)
 import GenericPackageDescription
     ( CondTree'
-    , GPD (..)
     , runGenericPackageDescription
     )
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
+import ListMap (ListMap, singleton, toList, union)
 import Text.PrettyPrint (Doc, render, text, ($$))
 
 data Opts = Opts
@@ -156,43 +155,41 @@ doOne Opts{..} fn = do
     let simplifiedGpd = simplifyGenericPackageDescription env gpd
 
     let v = specVersion (packageDescription gpd)
-        top :: FieldMap Json
-        components0
-            :: [ ( ComponentName
-                 , CondTree' (FieldMap (Fragment Json))
-                 )
-               ]
-        GPD top components0 = runGenericPackageDescription v simplifiedGpd
+        top :: ListMap String Json
+        components0 :: ListMap ComponentName (CondTree' (ListMap String (Fragment Json)))
+        (top, components0) = runGenericPackageDescription v simplifiedGpd
 
-    let components1 :: [(ComponentName, MyCondTree ConfVar (FieldMap (Fragment Json)))]
-        components1 = fmap (fmap convertCondTree) components0
+    let components1 :: ListMap ComponentName (MyCondTree ConfVar (ListMap String (Fragment Json)))
+        components1 = fmap convertCondTree components0
 
-    let components2 :: [(ComponentName, FieldMap (MyCondTree ConfVar (Fragment Json)))]
-        components2 = fmap (fmap pushConditionals) components1
+    let components2 :: ListMap ComponentName (ListMap String (MyCondTree ConfVar (Fragment Json)))
+        components2 = fmap pushConditionals components1
 
-    let components3 :: [(ComponentName, FieldMap (Cond ConfVar (Fragment Json)))]
-        components3 = fmap (fmap (fmap flattenCondTree)) components2
+    let components3 :: ListMap ComponentName (ListMap String (Cond ConfVar (Fragment Json)))
+        components3 = fmap (fmap flattenCondTree) components2
 
-    let components4 :: [(ComponentName, FieldMap Json)]
-        components4 = fmap (fmap (fmap defragC)) components3
+    let components4 :: ListMap ComponentName (ListMap String Json)
+        components4 = fmap (fmap defragC) components3
 
     let output =
             if optsPretty
                 then
                     toUTF8LBS $
                         render $
-                            pretty (fmap (text . fromUTF8LBS . renderJson) top) $$ prettyComponents components4
+                            pretty (fmap (text . fromUTF8LBS . renderJson) top)
+                                $$ prettyComponents (ListMap.toList components4)
                 else
                     renderJson
                         $ toJSON
-                        $ FieldMap.union
+                        $ ListMap.union
                             (fmap toJSON top)
-                        $ FieldMap.singleton
+                        $ ListMap.singleton
                             "components"
-                        $ components2json components4
+                        $ components2json (ListMap.toList components4)
+
     maybe BL.putStr BL.writeFile optsOutput output
 
-components2json :: ToJSON a => [(ComponentName, FieldMap a)] -> Json
+components2json :: ToJSON a => [(ComponentName, ListMap String a)] -> Json
 components2json cs =
     JsonObject
         [ name .= toJSON c
@@ -200,7 +197,7 @@ components2json cs =
         , let name = prettyShow cn
         ]
 
-prettyComponents :: ToJSON a => [(ComponentName, FieldMap a)] -> Doc
+prettyComponents :: ToJSON a => [(ComponentName, ListMap String a)] -> Doc
 prettyComponents cs =
     text $
         showFields

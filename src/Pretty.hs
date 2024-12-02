@@ -7,17 +7,15 @@ module Pretty
     , Vertically (..)
     ) where
 
-import Distribution.Fields.Pretty (CommentPosition (..), PrettyField (..), showFields)
-import Distribution.Pretty (Pretty (..), prettyShow)
+import Distribution.Compat.Newtype (Newtype)
+import Distribution.Fields.Pretty (PrettyField (..))
+import Distribution.Pretty (Pretty (..))
 import Distribution.Simple.Utils (toUTF8BS)
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.Condition (Condition (..))
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagName, unFlagName)
 
-import Data.Map (Map)
-import Data.Map qualified as Map
-import Distribution.Compat.Newtype (Newtype)
 import Text.PrettyPrint (Doc, char, hsep, parens, text, ($$), (<+>))
 
 class PrettyFieldClass a where

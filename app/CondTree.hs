@@ -15,7 +15,7 @@ module CondTree
     , convertCondTree
     , defragC
     , flattenCondTree
-    , foldCondTree
+    -- , foldCondTree
     , pushConditionals
     , Cond (..)
     ) where
@@ -44,9 +44,9 @@ import Distribution.Utils.Json (Json (..), (.=))
 
 import Text.PrettyPrint hiding ((<>))
 
-import FieldMap (FieldMap)
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
+import ListMap (ListMap)
 import Pretty (PrettyFieldClass (..), Vertically (..), ppCondition, prettySection)
 import These (Semialign (..), These (..), justHere, justThere, these)
 
@@ -123,21 +123,6 @@ applyEnv Env{envFlags} (PackageFlag fn) =
         Just b -> Right b
 applyEnv _ var = Left var
 
-foldCondTree
-    :: (a -> [s] -> s)
-    -> (Condition v -> s -> s)
-    -> (Condition v -> s -> s -> s)
-    -> CondTree v c a
-    -> s
-foldCondTree node ifThen ifThenElse = goNode
-  where
-    goNode (CondNode it _ ifs) =
-        node it (map goBranch ifs)
-    goBranch (CondBranch c thenTree Nothing) =
-        ifThen c (goNode thenTree)
-    goBranch (CondBranch c thenTree (Just elseTree)) =
-        ifThenElse c (goNode thenTree) (goNode elseTree)
-
 data CondValue v a = CondValue (Condition v) a
     deriving (Show, Functor, Foldable, Traversable)
 
@@ -147,9 +132,8 @@ instance (ToJSON v, ToJSON a) => ToJSON (CondValue v a) where
 data Cond v a = Cond (These a (NonEmpty (CondValue v a)))
     deriving Show
 
--- instance Functor (Cond v) where
---     fmap f (Cond (Left a) more) = Cond (Left (f a)) (map (fmap f) more)
---     fmap f (Cond (Right cv) more) = Cond (Right (fmap f cv)) (map (fmap f) more)
+instance Functor (Cond v) where
+    fmap f (Cond t) = Cond (bimap f (fmap (fmap f)) t)
 
 instance Pretty a => Pretty (Cond ConfVar a) where
     pretty (Cond t) =
@@ -233,7 +217,6 @@ instance ToJSON a => ToJSON (MyCondTree ConfVar a) where
             (\t' f' -> JsonArray (toJSON t' : map toJSON (NE.toList f')))
             t
 
--- NOTE: Identical to MyCondBranch, a part from the recursion point
 data MyCondBranch v a = MyCondBranch (Condition v) (MyCondTree v a) (Maybe (MyCondTree v a))
     deriving (Show, Functor, Foldable)
 
@@ -277,10 +260,9 @@ instance Pretty a => Pretty (MyCondBranch ConfVar a) where
             ]
 
 pushConditionals
-    :: forall a v
-     . Semigroup a
-    => MyCondTree v (FieldMap a)
-    -> FieldMap (MyCondTree v a)
+    :: Semigroup a
+    => MyCondTree v (ListMap String a)
+    -> ListMap String (MyCondTree v a)
 pushConditionals (MyCondNode (This a)) =
     fmap (MyCondNode . This) a
 pushConditionals (MyCondNode (That b)) =
@@ -292,9 +274,9 @@ pushConditionals (MyCondNode (These a b)) =
 
 pushConditionals'B
     :: Semigroup a
-    => NonEmpty (MyCondBranch v (FieldMap a))
-    -> FieldMap (NonEmpty (MyCondBranch v a))
-pushConditionals'B = foldMap1' $ \case
+    => NonEmpty (MyCondBranch v (ListMap String a))
+    -> ListMap String (NonEmpty (MyCondBranch v a))
+pushConditionals'B = foldMap1 $ \case
     (MyCondBranch c thenTree Nothing) ->
         fmap
             (\t -> NE.singleton $ MyCondBranch c t Nothing)
@@ -318,7 +300,3 @@ convertCondTree (CondNode a _ ifs) =
 convertCondBranch :: CondBranch v c a -> MyCondBranch v a
 convertCondBranch (CondBranch c thenTree mElseTree) =
     MyCondBranch c (convertCondTree thenTree) (fmap convertCondTree mElseTree)
-
---
-
--- data Node v a = Node (Either a (MyCondBranch v a)) [MyCondBranch v a]
