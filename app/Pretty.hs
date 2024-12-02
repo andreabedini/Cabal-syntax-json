@@ -7,14 +7,16 @@ module Pretty
     , Vertically (..)
     ) where
 
-import Distribution.Fields.Pretty (PrettyField (..))
-import Distribution.Pretty (Pretty (..))
+import Distribution.Fields.Pretty (CommentPosition (..), PrettyField (..), showFields)
+import Distribution.Pretty (Pretty (..), prettyShow)
 import Distribution.Simple.Utils (toUTF8BS)
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
 import Distribution.Types.Condition (Condition (..))
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagName, unFlagName)
 
+import Data.Map (Map)
+import Data.Map qualified as Map
 import Distribution.Compat.Newtype (Newtype)
 import Text.PrettyPrint (Doc, char, hsep, parens, text, ($$), (<+>))
 
@@ -22,17 +24,16 @@ class PrettyFieldClass a where
     prettyField :: a -> [PrettyField ()]
 
 instance PrettyFieldClass a => PrettyFieldClass (CondTree ConfVar c a) where
-    prettyField = go
-      where
-        go (CondNode a _ bs) = prettyField a <> concatMap goBranch bs
+    prettyField (CondNode a _ bs) = prettyField a <> concatMap prettyField bs
 
-        goBranch (CondBranch c thenTree Nothing) =
-            [ prettySection "if" [ppCondition c] (go thenTree)
-            ]
-        goBranch (CondBranch c thenTree (Just elseTree)) =
-            [ prettySection "if" [ppCondition c] (go thenTree)
-            , prettySection "else" [] (go elseTree)
-            ]
+instance PrettyFieldClass a => PrettyFieldClass (CondBranch ConfVar c a) where
+    prettyField (CondBranch c thenTree Nothing) =
+        [ prettySection "if" [ppCondition c] (prettyField thenTree)
+        ]
+    prettyField (CondBranch c thenTree (Just elseTree)) =
+        [ prettySection "if" [ppCondition c] (prettyField thenTree)
+        , prettySection "else" [] (prettyField elseTree)
+        ]
 
 prettySection :: String -> [Doc] -> [PrettyField ()] -> PrettyField ()
 prettySection n args = PrettySection () (toUTF8BS n) (map pretty args)

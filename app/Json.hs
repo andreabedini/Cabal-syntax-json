@@ -240,4 +240,4 @@ instance ToJSON a => ToJSON (Map UnqualComponentName a) where
 deriving via (a :: Type) instance ToJSON a => ToJSON (Identity a)
 
 instance ToJSON Json where
-    toJSON = id
+    toJSON a = a

@@ -17,13 +17,14 @@ import System.Exit (exitFailure)
 
 import Distribution.Compiler (CompilerId (..))
 import Distribution.Parsec (Parsec, eitherParsec)
+import Distribution.Pretty (Pretty (..), prettyShow)
 import Distribution.System (Arch (..), OS (..), Platform (..))
-import Distribution.Types.CondTree (CondTree (..))
+import Distribution.Types.ComponentName
 import Distribution.Types.ConfVar (ConfVar (..))
-import Distribution.Types.Dependency (Dependency)
 import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
 import Distribution.Types.PackageDescription (PackageDescription (..))
+import Distribution.Utils.Generic (fromUTF8LBS, toUTF8BS, toUTF8LBS)
 import Distribution.Utils.Json (Json (..), renderJson, (.=))
 import Distribution.Verbosity qualified as Verbosity
 
@@ -41,19 +42,16 @@ import CondTree
     , simplifyGenericPackageDescription
     )
 
--- import Distribution.Fields.Pretty (CommentPosition (..), showFields)
--- import Distribution.Pretty (Pretty (..))
-import FieldMap (FieldMap, toList)
+import Distribution.Fields.Pretty (CommentPosition (..), PrettyField (..), showFields)
+import FieldMap (FieldMap, singleton, union)
 import GenericPackageDescription
-    ( Components (..)
+    ( CondTree'
     , GPD (..)
-    , foldComponents
     , runGenericPackageDescription
     )
 import Json (ToJSON (..))
 import JsonFieldGrammar (Fragment (..))
-
--- import Pretty (PrettyFieldClass (..))
+import Text.PrettyPrint (Doc, render, text, ($$))
 
 data Opts = Opts
     { optsOutput :: Maybe FilePath
@@ -61,6 +59,7 @@ data Opts = Opts
     , optsArch :: Maybe Arch
     , optsOs :: Maybe OS
     , optsCompiler :: Maybe CompilerId
+    , optsPretty :: Bool
     }
     deriving Show
 
@@ -72,6 +71,7 @@ defaultOptions =
         , optsArch = Nothing
         , optsOs = Nothing
         , optsCompiler = Nothing
+        , optsPretty = False
         }
 
 mkArgDescr :: Parsec t => String -> (t -> b) -> ArgDescr (Either String b)
@@ -101,6 +101,11 @@ options =
         "p"
         ["platform"]
         (mkArgDescr "PLATFORM" (\(Platform arch os) opts -> opts{optsArch = Just arch, optsOs = Just os}))
+        "Platform"
+    , Option
+        ""
+        ["pretty"]
+        (NoArg (Right (\opts -> opts{optsPretty = True})))
         "Platform"
     , Option
         "o"
@@ -151,50 +156,57 @@ doOne Opts{..} fn = do
     let simplifiedGpd = simplifyGenericPackageDescription env gpd
 
     let v = specVersion (packageDescription gpd)
-        top :: FieldMap (Fragment Json)
+        top :: FieldMap Json
         components0
-            :: Components
-                (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
+            :: [ ( ComponentName
+                 , CondTree' (FieldMap (Fragment Json))
+                 )
+               ]
         GPD top components0 = runGenericPackageDescription v simplifiedGpd
 
-    -- putStrLn "original"
-    -- putStrLn $ showFields (const NoComment) $ prettyField components0
+    let components1 :: [(ComponentName, MyCondTree ConfVar (FieldMap (Fragment Json)))]
+        components1 = fmap (fmap convertCondTree) components0
 
-    let components1 :: Components (MyCondTree ConfVar (FieldMap (Fragment Json)))
-        components1 = fmap convertCondTree components0
+    let components2 :: [(ComponentName, FieldMap (MyCondTree ConfVar (Fragment Json)))]
+        components2 = fmap (fmap pushConditionals) components1
 
-    -- putStrLn (banner "converted")
-    -- putStrLn $ showFields (const NoComment) $ prettyField components1
+    let components3 :: [(ComponentName, FieldMap (Cond ConfVar (Fragment Json)))]
+        components3 = fmap (fmap (fmap flattenCondTree)) components2
 
-    let components2 :: Components (FieldMap (MyCondTree ConfVar (Fragment Json)))
-        components2 = fmap pushConditionals components1
+    let components4 :: [(ComponentName, FieldMap Json)]
+        components4 = fmap (fmap (fmap defragC)) components3
 
-    -- putStrLn (banner "pushed")
-    -- print $ pretty components2
+    let output =
+            if optsPretty
+                then
+                    toUTF8LBS $
+                        render $
+                            pretty (fmap (text . fromUTF8LBS . renderJson) top) $$ prettyComponents components4
+                else
+                    renderJson
+                        $ toJSON
+                        $ FieldMap.union
+                            (fmap toJSON top)
+                        $ FieldMap.singleton
+                            "components"
+                        $ components2json components4
+    maybe BL.putStr BL.writeFile optsOutput output
 
-    let components3 :: Components (FieldMap (Cond ConfVar (Fragment Json)))
-        components3 = fmap (fmap flattenCondTree) components2
+components2json :: ToJSON a => [(ComponentName, FieldMap a)] -> Json
+components2json cs =
+    JsonObject
+        [ name .= toJSON c
+        | (cn, c) <- cs
+        , let name = prettyShow cn
+        ]
 
-    -- putStrLn (banner "flattened")
-    -- print $ pretty components3
-
-    let components4 :: Components (FieldMap Json)
-        components4 = fmap (fmap defragC) components3
-
-    let json =
-            JsonObject $
-                FieldMap.toList (fmap toJSON top)
-                    <> foldComponents
-                        (\libs -> [("libraries" .= toJSON libs) | not (null libs)])
-                        (\flibs -> [("foreign-libraries" .= toJSON flibs) | not (null flibs)])
-                        (\exes -> [("executables" .= toJSON exes) | not (null exes)])
-                        (\tests -> [("test-suites" .= toJSON tests) | not (null tests)])
-                        (\benchs -> [("benchmarks" .= toJSON benchs) | not (null benchs)])
-                        components4
-
-    maybe BL.putStr BL.writeFile optsOutput $ renderJson json
-
--- banner :: [Char] -> String
--- banner name =
---     unlines
---         ["", replicate (length name + 8) '-', unwords ["---", name, "---"], replicate (length name + 8) '-']
+prettyComponents :: ToJSON a => [(ComponentName, FieldMap a)] -> Doc
+prettyComponents cs =
+    text $
+        showFields
+            (const NoComment)
+            [ PrettyField () (toUTF8BS name) (pretty comp)
+            | (cn, c) <- cs
+            , let name = prettyShow cn
+                  comp = fmap (text . fromUTF8LBS . renderJson . toJSON) c
+            ]
