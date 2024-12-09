@@ -1,0 +1,7 @@
+packages: .
+
+program-options
+  ghc-options: -Wall
+
+-- Avoid any non-boot dependency
+active-repositories: :none
