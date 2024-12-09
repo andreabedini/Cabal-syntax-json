@@ -134,7 +134,7 @@ options =
     ]
 
 header :: String
-header = "Usage: cabal2sync [OPTION...] files..."
+header = "Usage: cabal2json [OPTION...] files..."
 
 putWarn :: String -> IO ()
 putWarn = hPutStrLn stderr . ("Warning: " ++)
