@@ -13,7 +13,7 @@ This tool is aimed to build-system developers who need to extract information ab
 ## Usage
 
 ```
-Usage: cabal2sync [OPTION...] files...
+Usage: cabal2json [OPTION...] files...
   -h           --help               Print this help message
                --out=FILE           Path for output
   -f FLAG      --flag=FLAG          Specialise to flag assignment FLAG
