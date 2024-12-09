@@ -3,5 +3,10 @@ packages: .
 program-options
   ghc-options: -Wall
 
--- Avoid any non-boot dependency
-active-repositories: :none
+constraints:
+  , bytestring installed
+  , containers installed
+  , Cabal installed
+  , Cabal-syntax installed
+  , pretty installed
+  
