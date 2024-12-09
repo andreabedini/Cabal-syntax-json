@@ -4,35 +4,94 @@ on:
   push:
     branches:
       - main
+    tags:
+      - v*
   pull_request:
     types:
       - opened
       - synchronize
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
+        runs-on:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        cabal:
+          - latest
         ghc: 
           - "9.10"
           - "9.8"
           - "9.6"
+    runs-on: ${{ matrix.runs-on }}
+    outputs:
+      cabal2json: ${{ steps.upload-artifact.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: haskell-actions/setup@v2
-        id: setup
+      - name: Install GHCup
+        run: |
+          export BOOTSTRAP_HASKELL_MINIMAL=1
+          export BOOTSTRAP_HASKELL_NONINTERACTIVE=1
+          export GHCUP_INSTALL_BASE_PREFIX=$HOME
+          if ! command -v ghcup >/dev/null; then
+            echo "::group::Installing GHCup"
+            curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+            echo "$GHCUP_INSTALL_BASE_PREFIX/.ghcup/bin" >> "$GITHUB_PATH"
+            echo "::endgroup::"
+          fi
+
+      - id: ghcup
+        run: echo "basedir=$(ghcup whereis basedir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@v4
+        id: cache
+        with: 
+          path: ${{ steps.ghcup.outputs.basedir }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ghc-${{ matrix.ghc }}-cabal-${{ matrix.cabal }}
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ghcup install cabal --set ${{ matrix.cabal }}
+          ghcup install ghc --set ${{ matrix.ghc }}
+
+      - if: always() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
-          cabal-version: latest
-          ghc-version: ${{ matrix.ghc }}
+          path: ${{ steps.ghcup.outputs.basedir }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ghc-${{ matrix.ghc }}-cabal-${{ matrix.cabal }}
 
-      - run: cabal build --dry-run
+      - run: cabal update
 
-      - uses: andreabedini/cabal-cache-native@main
-        with:
-          store-path: ${{ steps.setup.outputs.cabal-store }}
-
-      - run: cabal build
+      - id: build
+        run: |
+          cabal build
+          echo "binpath=$(cabal list-bin cabal2json)" >> "$GITHUB_OUTPUT"
 
       - run: cabal run -- golden-tests
+
+      - id: upload-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cabal2json-ghc-${{ matrix.ghc }}-${{ runner.arch }}-${{ runner.os }}
+          path: ${{ steps.build.outputs.binpath }}
+
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: cabal2json
+          pattern: cabal2json-*
+          merge-multiple: true
+      - run: ls -R cabal2json
