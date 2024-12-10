@@ -3,8 +3,8 @@
 This package provides a robust JSON representation of cabal files. While it is not the first
 or the only package to do so, I believe it has some interesting features that make it worth:
 
-1) Simple. Zero non-boot dependency, you only need GHC.
-2) Robust. It uses Cabal-syntax own code and makes no assumptions on the fields.
+1. Simple. Zero non-boot dependency, you only need GHC.
+2. Robust. It uses Cabal-syntax own code and makes no assumptions on the fields.
 3. Helpful. It transforms if conditions in a format easier to handle.
 4. Flexible. It can simplify those conditionals based on flags passed on the cli.
 
