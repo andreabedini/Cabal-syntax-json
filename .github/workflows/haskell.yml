@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc: 
+          - "9.10"
+          - "9.8"
+          - "9.6"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        id: setup
+        with:
+          cabal-version: latest
+          ghc-version: ${{ matrix.ghc }}
+
+      - run: cabal build --dry-run
+
+      - uses: andreabedini/cabal-cache-native@main
+        with:
+          store-path: ${{ steps.setup.outputs.cabal-store }}
+
+      - run: cabal build
+
+      - run: cabal run -- golden-tests
