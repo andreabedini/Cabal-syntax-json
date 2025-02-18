@@ -2,7 +2,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Json
+module Cabal.Syntax.Json
     ( ToJSON (..)
     , Pair
     , module Distribution.Utils.Json
@@ -60,7 +60,7 @@ import Distribution.Types.VersionRange (VersionRange)
 import Distribution.Utils.Json
 import Language.Haskell.Extension (Extension, Language)
 
-import Compat
+import Cabal.Syntax.Compat
     ( CompatDataDir (CompatDataDir)
     , CompatFilePath (..)
     , RelativePath
@@ -68,8 +68,8 @@ import Compat
     , SymbolicPath
     , SymbolicPathNT (SymbolicPathNT)
     )
-import ListMap (ListMap)
-import Utils (FoldableWithIndex (..))
+import Cabal.Syntax.ListMap (ListMap)
+import Cabal.Syntax.Utils (FoldableWithIndex (..))
 
 class ToJSON a where
     toJSON :: a -> Json

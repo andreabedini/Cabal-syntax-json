@@ -1,6 +1,6 @@
 {-# LANGUAGE DerivingVia #-}
 
-module Pretty
+module Cabal.Syntax.Pretty
     ( PrettyFieldClass (..)
     , prettySection
     , ppCondition
@@ -18,8 +18,8 @@ import Distribution.Types.Flag (FlagName, unFlagName)
 
 import Text.PrettyPrint (Doc, char, hsep, parens, text, ($$), (<+>))
 
-import ListMap (ListMap)
-import Utils (FoldableWithIndex (..))
+import Cabal.Syntax.ListMap (ListMap)
+import Cabal.Syntax.Utils (FoldableWithIndex (..))
 
 class PrettyFieldClass a where
     prettyField :: a -> [PrettyField ()]

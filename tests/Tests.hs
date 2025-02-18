@@ -1,18 +1,20 @@
+import Data.Traversable (for)
+
+import Distribution.Pretty (prettyShow)
+import Distribution.System (OS (..))
+import Distribution.Types.Flag (PackageFlag (..), unFlagName)
 import Distribution.Types.GenericPackageDescription
+import Distribution.Verbosity qualified as Verbosity
+
 import System.FilePath (replaceExtension, (<.>))
 import System.Process
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.Golden (findByExtension, goldenVsFile)
 import Test.Tasty.HUnit
 
-import Compat (makeSymbolicPath, readGenericPackageDescription)
-import Data.Traversable (for)
-import Distribution.Pretty (prettyShow)
-import Distribution.System (OS (..))
-import Distribution.Types.Flag (PackageFlag (..), unFlagName)
-import Distribution.Verbosity qualified as Verbosity
-import ListMap qualified
-import Utils (These (..), align)
+import Cabal.Syntax.Compat (makeSymbolicPath, readGenericPackageDescription)
+import Cabal.Syntax.ListMap qualified as ListMap
+import Cabal.Syntax.Utils (These (..), align)
 
 main :: IO ()
 main = do

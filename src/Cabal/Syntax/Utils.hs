@@ -1,6 +1,6 @@
 {-# LANGUAGE FunctionalDependencies #-}
 
-module Utils
+module Cabal.Syntax.Utils
     ( -- * with index
       FoldableWithIndex (..)
 

@@ -5,8 +5,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wall #-}
 
-module Compat
-    ( Compat.readGenericPackageDescription
+module Cabal.Syntax.Compat
+    ( Cabal.Syntax.Compat.readGenericPackageDescription
     , makeSymbolicPath
     , SymbolicPath
     , RelativePath

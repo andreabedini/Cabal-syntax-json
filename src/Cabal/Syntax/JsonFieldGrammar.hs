@@ -1,4 +1,4 @@
-module JsonFieldGrammar where
+module Cabal.Syntax.JsonFieldGrammar where
 
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
@@ -13,9 +13,10 @@ import Distribution.Utils.Generic (fromUTF8BS, fromUTF8LBS)
 import Distribution.Utils.Json (Json (..), renderJson)
 import Distribution.Utils.ShortText qualified as ST
 
-import Json (ToJSON (..))
-import Pretty (Vertically (..))
 import Text.PrettyPrint (Doc, text)
+
+import Cabal.Syntax.Json (ToJSON (..))
+import Cabal.Syntax.Pretty (Vertically (..))
 
 --
 -- FieldGrammar stuff

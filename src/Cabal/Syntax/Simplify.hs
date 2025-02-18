@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Simplify where
+module Cabal.Syntax.Simplify where
 
 import Distribution.Compat.Prelude (isJust, partitionEithers)
 import Distribution.Compiler (CompilerId (..))

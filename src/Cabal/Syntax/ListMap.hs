@@ -1,13 +1,13 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FunctionalDependencies #-}
 
-module ListMap
+module Cabal.Syntax.ListMap
     ( ListMap
     , singleton
     , empty
     , fromList
     , fromListWith
-    , ListMap.lookup
+    , Cabal.Syntax.ListMap.lookup
     , insert
     , union
     , unionWith
@@ -20,7 +20,7 @@ import Data.List.NonEmpty qualified as NE
 
 import Distribution.Utils.Generic (safeHead)
 
-import Utils (FoldableWithIndex (..), Semialign (..), These (..), these)
+import Cabal.Syntax.Utils (FoldableWithIndex (..), Semialign (..), These (..), these)
 
 newtype ListMap k v = ListMap [(k, v)]
     deriving (Eq, Show, Functor, Foldable, Traversable)

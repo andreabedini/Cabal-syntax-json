@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module GenericPackageDescription
+module Cabal.Syntax.GenericPackageDescription
     ( runGenericPackageDescription
     , CondTree'
     , GPD (..)
@@ -46,12 +46,12 @@ import Distribution.Utils.Json (Json (..))
 
 import Text.PrettyPrint (Doc, text)
 
-import Json (ToJSON (..))
-import JsonFieldGrammar (Fragment (..), jsonFieldGrammar, jsonFieldGrammar')
-import ListMap (ListMap)
-import ListMap qualified
-import Pretty (PrettyFieldClass (..), prettySection)
-import Utils (FoldableWithIndex (..), Semialign (..))
+import Cabal.Syntax.Json (ToJSON (..))
+import Cabal.Syntax.JsonFieldGrammar (Fragment (..), jsonFieldGrammar, jsonFieldGrammar')
+import Cabal.Syntax.ListMap (ListMap)
+import Cabal.Syntax.ListMap qualified as ListMap
+import Cabal.Syntax.Pretty (PrettyFieldClass (..), prettySection)
+import Cabal.Syntax.Utils (FoldableWithIndex (..), Semialign (..))
 
 type CondTree' a = CondTree ConfVar [Dependency] a
 

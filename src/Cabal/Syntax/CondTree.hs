@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Operations on the conditional structure of Cabal files.
-module CondTree
+module Cabal.Syntax.CondTree
     ( -- ** Representation
       CondTree (..)
     , CondNode (..)
@@ -30,11 +30,11 @@ import Distribution.Types.Condition (Condition (..), cAnd, simplifyCondition)
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Utils.Json (Json (..), (.=))
 
-import GenericPackageDescription (FieldMap)
-import Json (ToJSON (..))
-import JsonFieldGrammar (Fragment (..))
-import Pretty (PrettyFieldClass (..), ppCondition, prettySection)
-import Utils (Semialign (..), These (..))
+import Cabal.Syntax.GenericPackageDescription (FieldMap)
+import Cabal.Syntax.Json (ToJSON (..))
+import Cabal.Syntax.JsonFieldGrammar (Fragment (..))
+import Cabal.Syntax.Pretty (PrettyFieldClass (..), ppCondition, prettySection)
+import Cabal.Syntax.Utils (Semialign (..), These (..))
 
 -- | An alternative representation of the conditional structure of a Cabal file:
 -- a non-empty list of nodes.

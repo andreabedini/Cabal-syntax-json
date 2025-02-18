@@ -13,15 +13,15 @@ library
                     , Cabal        ^>=3.10 || ^>=3.12 || ^>=3.14
                     , Cabal-syntax ^>=3.10 || ^>=3.12 || ^>=3.14
                     , pretty
-  exposed-modules:    Compat
-                      CondTree
-                      GenericPackageDescription
-                      Json
-                      JsonFieldGrammar
-                      ListMap
-                      Pretty
-                      Simplify
-                      Utils
+  exposed-modules:    Cabal.Syntax.Compat
+                      Cabal.Syntax.CondTree
+                      Cabal.Syntax.GenericPackageDescription
+                      Cabal.Syntax.Json
+                      Cabal.Syntax.JsonFieldGrammar
+                      Cabal.Syntax.ListMap
+                      Cabal.Syntax.Pretty
+                      Cabal.Syntax.Simplify
+                      Cabal.Syntax.Utils
   hs-source-dirs:     src
   default-language:   GHC2021
 

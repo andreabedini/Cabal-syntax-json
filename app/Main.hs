@@ -32,8 +32,8 @@ import Distribution.Verbosity qualified as Verbosity
 import Data.ByteString.Lazy qualified as BL
 import Text.PrettyPrint (render)
 
-import Compat -- Leave unqualified
-import CondTree
+import Cabal.Syntax.Compat -- Leave unqualified
+import Cabal.Syntax.CondTree
     ( CondTree (..)
     , Guarded
     , convertCondTree
@@ -41,17 +41,17 @@ import CondTree
     , flattenCondTree
     , pushConditionals
     )
-import GenericPackageDescription
+import Cabal.Syntax.GenericPackageDescription
     ( ComponentMap (..)
     , FieldMap (..)
     , GPD (..)
     , renderFields
     , runGenericPackageDescription
     )
-import Json (ToJSON (..))
-import JsonFieldGrammar (Fragment (..))
-import Pretty (PrettyFieldClass (..))
-import Simplify (Env (..), simplifyGPD)
+import Cabal.Syntax.Json (ToJSON (..))
+import Cabal.Syntax.JsonFieldGrammar (Fragment (..))
+import Cabal.Syntax.Pretty (PrettyFieldClass (..))
+import Cabal.Syntax.Simplify (Env (..), simplifyGPD)
 
 data Opts = Opts
     { optsArch :: Maybe Arch
