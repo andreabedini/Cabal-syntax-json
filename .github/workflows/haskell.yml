@@ -19,6 +19,7 @@ defaults:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         runs-on:
           - ubuntu-latest
@@ -26,50 +27,53 @@ jobs:
           - windows-latest
         cabal:
           - latest
-        ghc: 
+        ghc:
+          - "9.12"
           - "9.10"
           - "9.8"
-          - "9.6"
     runs-on: ${{ matrix.runs-on }}
     outputs:
       cabal2json: ${{ steps.upload-artifact.outputs.artifact-id }}
     steps:
+      - name: Set artifact name to cabal2json-ghc-${{ matrix.ghc }}-${{ runner.arch }}-${{ runner.os }}
+        run: echo "FULLNAME=cabal2json-ghc-${{ matrix.ghc }}-${{ runner.arch }}-${{ runner.os }}" >> $GITHUB_ENV
+
       - uses: actions/checkout@v4
 
-      - name: Install GHCup
-        uses: andreabedini/haskell-actions/ghcup@main
+      - name: Install GHC and cabal
+        uses: haskell/ghcup-setup@v1.2
         with:
-          version: "0.1.30.0"
+          ghc: ${{ matrix.ghc }}
+          cabal: ${{ matrix.cabal }}
 
-      - run: |
-          ghcup install cabal --set ${{ matrix.cabal }}
-          ghcup install ghc --set ${{ matrix.ghc }}
+      - name: Update Hackage index
+        run: cabal update
 
-      - run: cabal update
+      - name: Build
+        run: cabal build
 
-      - id: build
+      - name: Test
+        run: cabal run -- golden-tests
+
+      - name: Move files around
         run: |
-          cabal build
-          echo "binpath=$(cabal list-bin cabal2json)" >> "$GITHUB_OUTPUT"
-
-      - run: cabal run -- golden-tests
+          mkdir -p out
+          mv $(cabal list-bin cabal2json) out/${{ env.FULLNAME }}
 
       - id: upload-artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cabal2json-ghc-${{ matrix.ghc }}-${{ runner.arch }}-${{ runner.os }}
-          path: ${{ steps.build.outputs.binpath }}
+          name: ${{ env.FULLNAME }}
+          path: out/${{ env.FULLNAME }}
 
   release:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Download All Artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: cabal2json
-          pattern: cabal2json-*
+          path: artifacts
           merge-multiple: true
-
-      - run: ls -R cabal2json
+      - run: gh release create --draft ${{ github.ref_name }} artifacts/*
