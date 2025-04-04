@@ -1,6 +1,8 @@
 cabal-version:   3.8
 name:            Cabal-syntax-json
+-- x-release-please-start-version
 version:         0.1.0.0
+-- x-release-please-end
 license:         MIT
 author:          andrea@andreabedini.com
 maintainer:      Andrea Bedini
