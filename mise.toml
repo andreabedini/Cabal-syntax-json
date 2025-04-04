@@ -1,0 +1,5 @@
+[tools]
+cocogitto = "latest"
+lefthook = "latest"
+"npm:release-please" = "latest"
+"ubi:fourmolu/fourmolu" = "0.18.0.0"
