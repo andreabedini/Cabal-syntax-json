@@ -7,12 +7,12 @@ maintainer:      Andrea Bedini
 build-type:      Simple
 
 library
-  build-depends:      base         ^>=4.18 || ^>=4.19 || ^>=4.20
+  build-depends:      base         ^>=4.19 || ^>=4.20 || ^>=4.21
                     , bytestring   ^>=0.11 || ^>=0.12
-                    , containers
+                    , containers    >=0.6.8
                     , Cabal        ^>=3.10 || ^>=3.12 || ^>=3.14
                     , Cabal-syntax ^>=3.10 || ^>=3.12 || ^>=3.14
-                    , pretty
+                    , pretty       ^>=1.1
   exposed-modules:    Cabal.Syntax.Compat
                       Cabal.Syntax.CondTree
                       Cabal.Syntax.GenericPackageDescription
