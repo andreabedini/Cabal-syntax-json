@@ -106,6 +106,11 @@ pushConditionals (CondTree nodes) = foldMap1 go nodes
             (pushConditionals e)
 
 -- | Convert 'Distribution.Types.CondTree.CondTree' from Cabal-syntax into our 'CondTree'.
+--
+-- Cabal's node bundles a value, an aggregated constraint set (@c@, the collected
+-- @[Dependency]@), and its conditional branches. We deliberately discard the
+-- constraint set (the @_@ below): it is a redundant aggregation derivable from the
+-- build-depends fields, not source data, and plays no part in the JSON output.
 convertCondTree :: C.CondTree v c a -> CondTree v a
 convertCondTree (C.CondNode a _ ifs) =
     CondTree (CondNode a :| map convertCondBranch ifs)
