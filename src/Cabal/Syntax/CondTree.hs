@@ -162,8 +162,7 @@ data Guarded v a = Guarded (Condition v) a
 -- cumulative condition.
 flattenCondTree
     :: forall v a
-     . Semigroup a
-    => CondTree v a
+     . CondTree v a
     -> NonEmpty (Guarded v a)
 flattenCondTree (CondTree nodes) =
     foldMap1 (go (Lit True)) nodes
