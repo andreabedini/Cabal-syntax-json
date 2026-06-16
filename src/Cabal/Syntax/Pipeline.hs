@@ -1,7 +1,131 @@
 -- | The cabal→JSON transformation, expressed as five named representations.
 --
--- @--pristine@ renders stage 0 (Cabal's native conditional tree); the default
--- output renders stage 4. The README \"Details\" section narrates these steps.
+-- Structurally, a @.cabal@ file is a /tree of fields/: groups of fields nested
+-- under @if@\/@else@ conditions. What we want to emit instead is, for each field, a
+-- /tree of values/ — every value tagged with the condition under which it applies.
+-- This module performs that inversion as a chain of five representations, each given
+-- a type-alias name (stages 0–4) and a one-step function between consecutive stages.
+--
+-- The shapes are easiest to follow through a single field. Take a library with a
+-- conditional module:
+--
+-- @
+-- library
+--   exposed-modules: Core
+--   if flag(fast)
+--     exposed-modules: Core.Fast
+-- @
+--
+-- Cabal parses that stanza into a @CondTree ConfVar [Dependency] Library@. Looking at
+-- only each node's @exposed-modules@ (i.e. @fmap exposedModules@ over the tree), the
+-- conditional library is:
+--
+-- @
+-- CondNode
+--   { condTreeData = [ModuleName "Core"]
+--   , condTreeConstraints = []
+--   , condTreeComponents =
+--       [ CondBranch
+--           { condBranchCondition = Var (PackageFlag (FlagName "fast"))
+--           , condBranchIfTrue  = CondNode { condTreeData = [ModuleName "Core.Fast"]
+--                                          , condTreeConstraints = []
+--                                          , condTreeComponents = [] }
+--           , condBranchIfFalse = Nothing
+--           }
+--       ]
+--   }
+-- @
+--
+-- The pipeline rewrites that in five steps. Each representation below is shown limited
+-- to its @exposed-modules@ content (a real component carries every other field too).
+--
+-- === Stage 0 — 'ComponentTreeCabal'
+--
+-- "Cabal.Syntax.GenericPackageDescription" first renders each field group into a
+-- 'FieldMap' of JSON 'Cabal.Syntax.JsonFieldGrammar.Fragment's, but keeps Cabal's tree
+-- — conditions still sit /outside/ the fields. This is the shape @--pristine@ renders.
+--
+-- @
+-- CondNode
+--   { condTreeData =
+--       FieldMap (ListMap [("exposed-modules", ListLikeFragment (JsonString "Core" :| []))])
+--   , condTreeConstraints = []
+--   , condTreeComponents =
+--       [ CondBranch
+--           { condBranchCondition = Var (PackageFlag (FlagName "fast"))
+--           , condBranchIfTrue  =
+--               CondNode { condTreeData =
+--                            FieldMap (ListMap [("exposed-modules", ListLikeFragment (JsonString "Core.Fast" :| []))])
+--                        , condTreeConstraints = []
+--                        , condTreeComponents = [] }
+--           , condBranchIfFalse = Nothing
+--           }
+--       ]
+--   }
+-- @
+--
+-- === Stage 1 — 'ComponentTree'
+--
+-- 'convertCondTree' re-expresses the tree in our uniform
+-- 'Cabal.Syntax.CondTree.CondTree' (a non-empty list of nodes) and drops Cabal's
+-- constraint set. Still a /tree of fields/.
+--
+-- @
+-- CondTree
+--   ( CondNode (FieldMap (ListMap [("exposed-modules", ListLikeFragment (JsonString "Core" :| []))]))
+--   :| [ CondIfThen (Var (PackageFlag (FlagName "fast")))
+--          (CondTree (CondNode (FieldMap (ListMap [("exposed-modules", ListLikeFragment (JsonString "Core.Fast" :| []))])) :| [])) ] )
+-- @
+--
+-- === Stage 2 — 'FieldTrees'
+--
+-- /Fields of trees./ 'pushConditionals' inverts the nesting: the outer 'FieldMap' is
+-- now keyed by field name, and each field owns its own little
+-- 'Cabal.Syntax.CondTree.CondTree'. The @exposed-modules@ entry of the map becomes:
+--
+-- @
+-- ( "exposed-modules"
+-- , CondTree
+--     ( CondNode (ListLikeFragment (JsonString "Core" :| []))
+--     :| [ CondIfThen (Var (PackageFlag (FlagName "fast")))
+--            (CondTree (CondNode (ListLikeFragment (JsonString "Core.Fast" :| [])) :| [])) ] ) )
+-- @
+--
+-- === Stage 3 — 'GuardedFields'
+--
+-- @fmap 'flattenCondTree'@ collapses each field's tree into a flat, non-empty list of
+-- 'Cabal.Syntax.CondTree.Guarded' values, each carrying the /cumulative/ condition of
+-- the path that reached it (nested @if@s become a conjunction; an @else@ the negation):
+--
+-- @
+-- ( "exposed-modules"
+-- ,   Guarded (Lit True) (ListLikeFragment (JsonString "Core" :| []))
+--   :| [ Guarded (Var (PackageFlag (FlagName "fast"))) (ListLikeFragment (JsonString "Core.Fast" :| [])) ] )
+-- @
+--
+-- === Stage 4 — 'JsonFields'
+--
+-- @fmap 'defragment'@ merges each field's guarded values back into one
+-- 'Cabal.Syntax.JsonFieldGrammar.Fragment' (see there for the scalar\/list-like
+-- distinction). A @Lit True@ guard is emitted bare; any other guard becomes an
+-- @{_if, _then}@ object, and the pieces are concatenated:
+--
+-- @
+-- ( "exposed-modules"
+-- , ListLikeFragment
+--     ( JsonString "Core"
+--     :| [ JsonObject [ ("_if",   JsonObject [("flag", JsonString "fast")])
+--                     , ("_then", JsonArray [JsonString "Core.Fast"]) ] ] ) )
+-- @
+--
+-- Rendering that fragment to JSON gives the final output:
+--
+-- @
+-- "exposed-modules": [ "Core", { "_if": { "flag": "fast" }, "_then": [ "Core.Fast" ] } ]
+-- @
+--
+-- The default output renders stage 4; @--pristine@ renders stage 0. The README
+-- \"Details\" section narrates the same steps for a reader of the JSON.
 module Cabal.Syntax.Pipeline
     ( -- * The five representations
       ComponentTreeCabal

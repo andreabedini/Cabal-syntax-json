@@ -2,6 +2,13 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | Our minimal 'ToJSON' class and its instances for the cabal field types.
+--
+-- We roll our own rather than depend on @aeson@ so the package's runtime footprint
+-- stays within the GHC boot libraries; 'Json' itself is reused from @Cabal-syntax@
+-- and re-exported here. The 'ViaPretty' and 'ViaUnpack' newtypes supply most
+-- instances by deriving — most cabal values render as their @Pretty@ string, and
+-- many are newtypes that just unwrap.
 module Cabal.Syntax.Json
     ( ToJSON (..)
     , Pair
@@ -71,9 +78,13 @@ import Cabal.Syntax.Compat
 import Cabal.Syntax.ListMap (ListMap)
 import Cabal.Syntax.Utils (FoldableWithIndex (..))
 
+-- | Conversion to a 'Json' value. Our own minimal stand-in for @aeson@'s class.
 class ToJSON a where
+    -- | Encode a single value.
     toJSON :: a -> Json
 
+    -- | Encode a list of values. Overridable so e.g. @['Char']@ can render as a
+    -- JSON string rather than an array of characters.
     toJSONList :: [a] -> Json
     toJSONList = listValue toJSON
 
@@ -81,6 +92,7 @@ class ToJSON a where
 listValue :: (a -> Json) -> [a] -> Json
 listValue f = JsonArray . map f
 
+-- | A single member of a JSON object: a key and its value.
 type Pair = (String, Json)
 
 newtype ViaPretty a = ViaPretty a

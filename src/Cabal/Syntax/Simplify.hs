@@ -1,5 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
 
+-- | Partial evaluation of the conditionals in a 'GenericPackageDescription' against a
+-- known environment (the os\/arch\/compiler\/flags fixed on the command line).
+--
+-- Conditions the environment can decide are resolved and folded away; the rest are
+-- left intact, so the downstream pipeline still sees — and emits — the conditions
+-- the caller did not pin down.
 module Cabal.Syntax.Simplify where
 
 import Distribution.Compat.Prelude (isJust, partitionEithers)
@@ -13,6 +19,9 @@ import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Version (nullVersion)
 import Distribution.Types.VersionRange (withinRange)
 
+-- | Simplify every component's cond tree against the 'Env', and drop the flags the
+-- environment already fixes. Returns a 'GenericPackageDescription' with the decidable
+-- conditions evaluated away.
 simplifyGPD
     :: Env
     -> GenericPackageDescription
@@ -63,6 +72,9 @@ simplifyCondBranch eval (CondBranch cv t me) =
 filterFlags :: Env -> [PackageFlag] -> [PackageFlag]
 filterFlags Env{envFlags} = filter (\f -> isJust $ lookupFlagAssignment (flagName f) envFlags)
 
+-- | A partial assignment of the configuration variables: whichever of the operating
+-- system, architecture, compiler, and flags were pinned on the command line. Anything
+-- left 'Nothing'\/unset stays a live condition in the output.
 data Env = Env
     { envOS :: Maybe OS
     , envArch :: Maybe Arch
@@ -70,6 +82,8 @@ data Env = Env
     , envFlags :: FlagAssignment
     }
 
+-- | Resolve a single 'ConfVar' against the 'Env': @Right@ with its truth value if the
+-- environment decides it, or @Left@ the (unchanged) variable if it does not.
 applyEnv
     :: Env
     -> ConfVar

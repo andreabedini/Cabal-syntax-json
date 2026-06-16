@@ -1,6 +1,10 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FunctionalDependencies #-}
 
+-- | An association-list map that preserves insertion order.
+--
+-- Field and component order is significant in the JSON output, so throughout the
+-- package we use this in place of a sorted @Data.Map@.
 module Cabal.Syntax.ListMap
     ( ListMap
     , singleton
@@ -21,30 +25,41 @@ import Distribution.Utils.Generic (safeHead)
 
 import Cabal.Syntax.Utils (FoldableWithIndex (..), Semialign (..), These (..), these)
 
+-- | A map backed by a list of key/value pairs in insertion order.
 newtype ListMap k v = ListMap [(k, v)]
     deriving (Eq, Show, Functor, Foldable, Traversable)
 
+-- | A map holding a single key/value pair.
 singleton :: k -> v -> ListMap k v
 singleton k v = ListMap [(k, v)]
 
+-- | Insert a key/value pair. Any existing entry for the key is dropped and the new
+-- one appended at the end (last-wins). See 'fromListWith' to merge instead.
 insert :: Eq k => k -> a -> ListMap k a -> ListMap k a
 insert k a (ListMap m) =
     ListMap (m' ++ [(k, a)])
   where
     (_, m') = pop k m
 
+-- | The empty map.
 empty :: ListMap k v
 empty = ListMap mempty
 
+-- | Look up the value stored for a key.
 lookup :: Eq k => ListMap k v -> k -> Maybe v
 lookup (ListMap m) k = fst (pop k m)
 
+-- | Build a map from a list of pairs. Runs of /adjacent/ equal keys collapse to
+-- their last value (use 'fromListWith' to merge non-adjacent duplicates).
 fromList :: Eq k => [(k, v)] -> ListMap k v
 fromList =
     ListMap
         . map NE.last
         . NE.groupBy ((==) `on` fst)
 
+-- | Build a map from a list of pairs, combining the values of duplicate keys (even
+-- non-adjacent ones) with the given function. Each key keeps the position of its
+-- first occurrence.
 fromListWith :: Eq k => (v -> v -> v) -> [(k, v)] -> ListMap k v
 fromListWith f = foldl' (\acc (k, v) -> insertWith f k v acc) empty
 
@@ -70,11 +85,12 @@ instance Eq k => Semialign (ListMap k) where
                 (Just rv, rest) ->
                     (ln, These lv rv) : go ls rest
 
--- The expression (@'union' t1 t2@) takes the left-biased union of @t1@ and @t2@.
--- It prefers @t1@ when duplicate keys are encountered, -- i.e. (@'union' == 'unionWith' 'const'@).
+-- | Left-biased union: on a shared key the left map's value wins
+-- (@'union' == 'unionWith' 'const'@).
 union :: Eq k => ListMap k v -> ListMap k v -> ListMap k v
 union = unionWith const
 
+-- | Union of two maps, combining the values of shared keys with the given function.
 unionWith :: Eq k => (v -> v -> v) -> ListMap k v -> ListMap k v -> ListMap k v
 unionWith f l r = alignWith (these id id f) l r
 

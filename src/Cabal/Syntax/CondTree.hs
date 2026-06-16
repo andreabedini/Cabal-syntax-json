@@ -4,7 +4,31 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 
--- | Operations on the conditional structure of Cabal files.
+-- | Our own representation of a Cabal file's conditional structure, plus the
+-- transformations over it that drive "Cabal.Syntax.Pipeline".
+--
+-- == Why not reuse Cabal's @CondTree@?
+--
+-- Cabal's 'Distribution.Types.CondTree.CondTree' (@CondTree v c a@) is shaped for
+-- /evaluation/: every node bundles one data value (@a@), an aggregated constraint
+-- set (@c@, the collected @[Dependency]@), and a list of conditional branches. Two
+-- things make that awkward for us:
+--
+--   * The constraint set @c@ is a redundant aggregation — derivable from the
+--     build-depends fields, never part of the JSON output — so we discard it (see
+--     'convertCondTree').
+--   * We need to /restructure/ the tree, not evaluate it. 'pushConditionals' turns a
+--     tree whose leaves are whole field maps into a map of per-field trees, which
+--     means merging sibling subtrees field by field. That is far easier when the tree
+--     is a plain 'Semigroup' — a free-monoid-like @NonEmpty@ of nodes — than with
+--     Cabal's fixed @data + constraints + branches@ record.
+--
+-- So our 'CondTree' is simply a non-empty list of 'CondNode's, where a node is either
+-- a bare value or an @if@\/@if-else@ holding sub-trees. That uniform shape gives us
+-- 'Semigroup', 'Foldable1', and alignment (via "Cabal.Syntax.Utils") for free, and
+-- those are exactly what the transformations below lean on. 'convertCondTree' bridges
+-- from Cabal's type; 'pushConditionals', 'flattenCondTree' and 'defragment' are the
+-- restructuring steps.
 module Cabal.Syntax.CondTree
     ( -- ** Representation
       CondTree (..)
@@ -146,6 +170,11 @@ flattenCondTree (CondTree nodes) =
     go c (CondIfThenElse c' (CondTree ts) (CondTree es)) =
         foldMap1 (go (c `cAnd` c')) ts <> foldMap1 (go (c `cAnd` cNot c')) es
 
+-- | Merge a field's guarded values (stage 3) into a single 'Fragment' (stage 4).
+--
+-- A value guarded by @True@ is emitted bare; any other guard becomes a
+-- @{"_if": cond, "_then": values}@ object. The pieces are then combined through the
+-- 'Semigroup' instance of 'Fragment', so a list-like field concatenates its branches.
 defragment :: ToJSON v => NonEmpty (Guarded v (Fragment Json)) -> Fragment Json
 defragment =
     foldMap1 $ \case

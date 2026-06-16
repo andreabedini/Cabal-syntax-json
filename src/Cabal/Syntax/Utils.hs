@@ -1,5 +1,8 @@
 {-# LANGUAGE FunctionalDependencies #-}
 
+-- | Small general-purpose helpers: indexed folding, the 'These' type, and alignment
+-- of keyed containers. These mirror the @indexed-traversable@\/@these@\/@semialign@
+-- packages, reduced to just what this package uses so we stay on GHC boot dependencies.
 module Cabal.Syntax.Utils
     ( -- * with index
       FoldableWithIndex (..)
@@ -20,10 +23,16 @@ import Data.Bifoldable1 (Bifoldable1 (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bitraversable (Bitraversable (..))
 
+-- | Foldable containers whose elements carry an index — for our maps, the key.
 class FoldableWithIndex i f | f -> i where
+    -- | The elements with their indices, in order.
     itoList :: f a -> [(i, a)]
+
+    -- | Fold the elements together with their indices.
     ifoldMap :: Monoid m => (i -> a -> m) -> f a -> m
 
+-- | A value from the left, from the right, or from both. Used to represent the
+-- result of aligning two maps key by key (a key may be in one map, the other, or both).
 data These a b = This a | That b | These a b
     deriving (Eq, Show)
 
@@ -69,29 +78,38 @@ instance Bitraversable These where
     bitraverse _ g (That x) = That <$> g x
     bitraverse f g (These x y) = These <$> f x <*> g y
 
+-- | Case analysis for 'These': supply a handler for each of the three shapes.
 these :: (a -> c) -> (b -> c) -> (a -> b -> c) -> These a b -> c
 these f _ _ (This a) = f a
 these _ g _ (That b) = g b
 these _ _ h (These a b) = h a b
 
+-- | The left value, if present (@This@ or @These@).
 justHere :: These a b -> Maybe a
 justHere (This a) = Just a
 justHere (That _) = Nothing
 justHere (These a _) = Just a
 
+-- | The right value, if present (@That@ or @These@).
 justThere :: These a b -> Maybe b
 justThere (This _) = Nothing
 justThere (That b) = Just b
 justThere (These _ b) = Just b
 
+-- | Functors that can be aligned: combine two structures key by key, pairing up
+-- matching keys and keeping the leftovers, with mismatches recorded as 'These'.
 class Functor f => Semialign f where
+    -- | Align two structures, tagging each element by which side(s) it came from.
     align :: f a -> f b -> f (These a b)
     align = alignWith id
 
+    -- | 'align' followed by a mapping function, fused into one pass.
     alignWith :: (These a b -> c) -> f a -> f b -> f c
     alignWith f a b = f <$> align a b
 
     {-# MINIMAL (align | alignWith) #-}
 
+-- | A 'Semialign' that also has an empty element.
 class Semialign f => Align f where
+    -- | The empty structure (aligns with anything as all-'That').
     nil :: f a

@@ -1,3 +1,11 @@
+-- | Our 'FieldGrammar' interpretation, which renders each cabal field to a JSON
+-- 'Fragment', together with the 'Fragment' type itself.
+--
+-- @Cabal@ describes each field group (package description, library, executable, …)
+-- once, as a 'FieldGrammar', and reuses that description for parsing, pretty-printing,
+-- and more. 'JSONFieldGrammar' is one more interpretation of the same descriptions:
+-- run it over a value and it yields that value's fields as @(name, 'Fragment' 'Json')@
+-- pairs — no per-field code on our side.
 module Cabal.Syntax.JsonFieldGrammar where
 
 import Data.List.NonEmpty (NonEmpty (..))
@@ -22,14 +30,19 @@ import Cabal.Syntax.Pretty (Vertically (..))
 -- FieldGrammar stuff
 --
 
+-- | A 'FieldGrammar' interpretation. Given the cabal spec version and a source value
+-- @s@, it produces that value's fields as @(name, 'Fragment' 'Json')@ pairs. The
+-- result type @a@ is a phantom carried only to satisfy the 'FieldGrammar' interface.
 newtype JSONFieldGrammar s a = JsonFG
     { runJsonFieldGrammar :: CabalSpecVersion -> s -> [(String, Fragment Json)]
     }
     deriving Functor
 
+-- | Run a 'JSONFieldGrammar', yielding the @(field-name, fragment)@ pairs of @s@.
 jsonFieldGrammar :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> [(String, Fragment Json)]
 jsonFieldGrammar v fg = runJsonFieldGrammar fg v
 
+-- | Like 'jsonFieldGrammar', but assemble the fields into a single JSON object.
 jsonFieldGrammar' :: CabalSpecVersion -> JSONFieldGrammar s a -> s -> Json
 jsonFieldGrammar' v fg s = JsonObject [(n, toJSON a) | (n, a) <- jsonFieldGrammar v fg s]
 
@@ -163,6 +176,24 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> JSONFieldGrammar s a
     availableSince _v _a fg = fg
 
+-- | A single field's value, tagged with whether the field is a scalar or a sequence.
+--
+-- == Why not just 'Json'?
+--
+-- Once conditionals are pushed inside fields (see "Cabal.Syntax.Pipeline"), one field
+-- can collect values from several @if@\/@else@ branches that must be /merged/ — and how
+-- they merge depends on the field's arity:
+--
+--   * a scalar field (e.g. @name@, @version@) carries a 'ScalarFragment' and is
+--     replaced, never combined;
+--   * a list-like field (e.g. @build-depends@, @exposed-modules@) carries a
+--     'ListLikeFragment' and /concatenates/ across branches.
+--
+-- Keeping that distinction is what lets 'Cabal.Syntax.CondTree.defragment' splice a
+-- guard /into/ a list field — @[v1, {_if:…, _then:[v2]}]@ — instead of overwriting it.
+-- The 'Semigroup' instance encodes the same idea: combining any two fragments yields a
+-- 'ListLikeFragment', because a value that appears under more than one condition is, by
+-- construction, a sequence.
 data Fragment a
     = ScalarFragment a
     | ListLikeFragment (NonEmpty a)
@@ -184,14 +215,19 @@ instance Pretty (Fragment Json) where
     pretty (ListLikeFragment as) =
         alaf Vertically foldMap prettyJson as
 
+-- | Render a 'Json' value to a single-line 'Doc' (used by the @--debug@ printer).
 prettyJson :: Json -> Doc
 prettyJson = text . fromUTF8LBS . renderJson
 
+-- | A @(field-name, fragment)@ pair for a scalar field, decoding the 'FieldName' to a
+-- 'String'.
 scalarFragment :: FieldName -> a -> (String, Fragment a)
 scalarFragment fn v = (fromUTF8BS fn, ScalarFragment v)
 
+-- | Like 'scalarFragment' but taking the field name already as a 'String'.
 scalarFragment' :: String -> a -> (String, Fragment a)
 scalarFragment' fn v = (fn, ScalarFragment v)
 
+-- | A @(field-name, fragment)@ pair for a list-like field.
 listlikeFragment :: FieldName -> NonEmpty a -> (String, Fragment a)
 listlikeFragment fn vs = (fromUTF8BS fn, ListLikeFragment vs)

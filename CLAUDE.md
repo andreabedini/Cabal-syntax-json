@@ -47,8 +47,10 @@ its goldens the same way.
 
 ## Architecture
 
-The transformation runs as a pipeline; `app/Main.hs` (`main'` and `process`) wires the
-stages together and is the best entry point for understanding the whole flow. Stages:
+The transformation runs as a pipeline; `app/Main.hs` (`main'`) wires the stages together
+and is the best entry point for understanding the whole flow. The per-component
+transformation (stages 0–4 below) lives in `Cabal.Syntax.Pipeline`, which names each
+intermediate representation. Stages:
 
 1. **Parse** — `readGenericPackageDescription` (via `Cabal.Syntax.Compat`) yields a
    `GenericPackageDescription`.
@@ -60,11 +62,13 @@ stages together and is the best entry point for understanding the whole flow. St
    machinery, but with our `JSONFieldGrammar` interpretation, producing
    `GPD (FieldMap a) (ComponentMap b)` where each field value is a `Fragment Json`.
 4. **Restructure conditionals** (`Cabal.Syntax.CondTree`), only when not `--pristine`.
-   `process` in `Main.hs` chains four sub-steps over each component's cond tree:
-   `convertCondTree` → `pushConditionals` (push conditions down into field values:
-   tree-of-fields becomes fields-of-trees) → `flattenCondTree` (flatten to a list of
-   `Guarded` values, each carrying its cumulative `Condition`) → `defragment` (merge the
-   guarded fragments back into a single `Fragment Json` per field).
+   `process`/`processComponent` in `Cabal.Syntax.Pipeline` chains four sub-steps over each
+   component's cond tree: `convertCondTree` → `pushConditionals` (push conditions down into
+   field values: tree-of-fields becomes fields-of-trees) → `flattenCondTree` (flatten to a
+   list of `Guarded` values, each carrying its cumulative `Condition`) → `defragment` (merge
+   the guarded fragments back into a single `Fragment Json` per field). The module also names
+   the five intermediate representations as stage-type aliases (`ComponentTreeCabal`,
+   `ComponentTree`, `FieldTrees`, `GuardedFields`, `JsonFields`).
 5. **Render** — `formatJson` (default) via the `ToJSON` class in `Cabal.Syntax.Json`, or
    `formatPretty` (`--debug`) via the `PrettyFieldClass` in `Cabal.Syntax.Pretty`, which
    emits a cabal-like intermediate format useful for debugging.
@@ -84,6 +88,9 @@ stages together and is the best entry point for understanding the whole flow. St
   deriving helpers.
 - `Cabal.Syntax.GenericPackageDescription` — `GPD`, `FieldMap`, `ComponentMap` wrappers
   and the `runGenericPackageDescription` driver.
+- `Cabal.Syntax.Pipeline` — the named cabal→JSON transformation: `process`/`processComponent`
+  and the five stage-type aliases (stages 0–4). This is the default-output chain extracted
+  out of `app/Main.hs`.
 - `Cabal.Syntax.Simplify` — `Env` and partial conditional evaluation.
 - `Cabal.Syntax.ListMap` — an association-list map preserving insertion order (field and
   component ordering is significant in the output).
