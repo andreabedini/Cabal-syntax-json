@@ -114,42 +114,41 @@ runGenericPackageDescription v gpd =
   where
     meta :: ListMap String (Fragment Json)
     meta =
-        fmap ScalarFragment $
-            ListMap.fromList $
-                mconcat
-                    [ fmap (fmap toJSON) $
-                        jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
-                    , [ ( "custom-setup"
-                        , jsonFieldGrammar' v (setupBInfoFieldGrammar False) sbi
-                        )
-                      | sbi <- maybeToList (setupBuildInfo (packageDescription gpd))
-                      ]
-                    , [ ("source-repositories", sourceRepos2json v repos)
-                      | let repos = sourceRepos (packageDescription gpd)
-                      , not (null repos)
-                      ]
-                    , [ ("flags", flags2json v flags)
-                      | let flags = genPackageFlags gpd
-                      , not (null flags)
-                      ]
-                    ]
+        ListMap.fromListWith (<>) $
+            mconcat
+                [ fmap (fmap (ScalarFragment . toJSON)) $
+                    jsonFieldGrammar v packageDescriptionFieldGrammar (packageDescription gpd)
+                , [ ( "custom-setup"
+                    , ScalarFragment (jsonFieldGrammar' v (setupBInfoFieldGrammar False) sbi)
+                    )
+                  | sbi <- maybeToList (setupBuildInfo (packageDescription gpd))
+                  ]
+                , [ ("source-repositories", ScalarFragment (sourceRepos2json v repos))
+                  | let repos = sourceRepos (packageDescription gpd)
+                  , not (null repos)
+                  ]
+                , [ ("flags", ScalarFragment (flags2json v flags))
+                  | let flags = genPackageFlags gpd
+                  , not (null flags)
+                  ]
+                ]
 
     components =
         ListMap.fromList $
             mconcat
-                [ [ (CLibName n, fmap (FieldMap . ListMap.fromList . jsonFieldGrammar v (libraryFieldGrammar n)) c)
+                [ [ (CLibName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (libraryFieldGrammar n)) c)
                   | (n, c) <- libs
                   ]
-                , [ (CFLibName n, fmap (FieldMap . ListMap.fromList . jsonFieldGrammar v (foreignLibFieldGrammar n)) c)
+                , [ (CFLibName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (foreignLibFieldGrammar n)) c)
                   | (n, c) <- condForeignLibs gpd
                   ]
-                , [ (CExeName n, fmap (FieldMap . ListMap.fromList . jsonFieldGrammar v (executableFieldGrammar n)) c)
+                , [ (CExeName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (executableFieldGrammar n)) c)
                   | (n, c) <- condExecutables gpd
                   ]
-                , [ (CTestName n, fmap (FieldMap . ListMap.fromList . jsonFieldGrammar v testSuiteFieldGrammar) c)
+                , [ (CTestName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v testSuiteFieldGrammar) c)
                   | (n, c) <- tests
                   ]
-                , [ (CBenchName n, fmap (FieldMap . ListMap.fromList . jsonFieldGrammar v benchmarkFieldGrammar) c)
+                , [ (CBenchName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v benchmarkFieldGrammar) c)
                   | (n, c) <- benchmarks
                   ]
                 ]
