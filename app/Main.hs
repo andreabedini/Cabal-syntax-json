@@ -5,7 +5,6 @@
 import Control.Monad (unless, when)
 import Data.Either (partitionEithers)
 import Data.Foldable (for_)
-import Data.List.NonEmpty (NonEmpty)
 import System.Console.GetOpt
     ( ArgDescr (..)
     , ArgOrder (..)
@@ -20,8 +19,6 @@ import System.IO (hPutStrLn, stderr)
 import Distribution.Compiler (CompilerFlavor (..), CompilerId (..))
 import Distribution.Parsec (Parsec, eitherParsec)
 import Distribution.System (Arch (..), OS (..), Platform (..))
-import Distribution.Types.CondTree qualified as C
-import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagAssignment)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
 import Distribution.Types.PackageDescription (PackageDescription (..))
@@ -33,23 +30,14 @@ import Data.ByteString.Lazy qualified as BL
 import Text.PrettyPrint (render)
 
 import Cabal.Syntax.Compat -- Leave unqualified
-import Cabal.Syntax.CondTree
-    ( CondTree (..)
-    , Guarded
-    , convertCondTree
-    , defragment
-    , flattenCondTree
-    , pushConditionals
-    )
 import Cabal.Syntax.GenericPackageDescription
-    ( ComponentMap (..)
-    , FieldMap (..)
-    , GPD (..)
+    ( GPD (..)
     , renderFields
     , runGenericPackageDescription
     )
 import Cabal.Syntax.Json (ToJSON (..))
-import Cabal.Syntax.JsonFieldGrammar (Fragment (..))
+import Cabal.Syntax.JsonFieldGrammar (Fragment)
+import Cabal.Syntax.Pipeline (process)
 import Cabal.Syntax.Pretty (PrettyFieldClass (..))
 import Cabal.Syntax.Simplify (Env (..), simplifyGPD)
 
@@ -212,20 +200,3 @@ formatPretty =
 formatJson :: (ToJSON a, ToJSON b) => GPD a b -> BL.ByteString
 formatJson =
     renderJson . toJSON
-
-process
-    :: ComponentMap (C.CondTree ConfVar c (FieldMap (Fragment Json)))
-    -> ComponentMap (FieldMap (Fragment Json))
-process components0 = components4
-  where
-    components1 :: ComponentMap (CondTree ConfVar (FieldMap (Fragment Json)))
-    components1 = fmap convertCondTree components0
-
-    components2 :: ComponentMap (FieldMap (CondTree ConfVar (Fragment Json)))
-    components2 = fmap pushConditionals components1
-
-    components3 :: ComponentMap (FieldMap (NonEmpty (Guarded ConfVar (Fragment Json))))
-    components3 = fmap (fmap flattenCondTree) components2
-
-    components4 :: ComponentMap (FieldMap (Fragment Json))
-    components4 = fmap (fmap defragment) components3

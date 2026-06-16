@@ -20,6 +20,7 @@ library
                       Cabal.Syntax.GenericPackageDescription
                       Cabal.Syntax.Json
                       Cabal.Syntax.JsonFieldGrammar
+                      Cabal.Syntax.Pipeline
                       Cabal.Syntax.ListMap
                       Cabal.Syntax.Pretty
                       Cabal.Syntax.Simplify
