@@ -363,6 +363,47 @@ The JSON representation is obtained through the following steps:
         filepath >= 1.4.100.0 && < 1.5.0.0
   ```
 
+## Output modes
+
+`cabal2json` can render the package at two points in the pipeline:
+
+- **default** — the fully transformed form described above: conditionals are pushed
+  *inside* each field value and flattened so every value carries its cumulative
+  condition. This is *fields of trees*.
+- **`--pristine`** — Cabal's own conditional structure, untransformed: conditions sit
+  *outside* groups of fields, with one condition per branch, so nested conditions nest
+  in the output. This is *tree of fields*. Use it to see the package exactly as
+  Cabal parses it.
+
+`--debug` is orthogonal to both: it renders the selected form in a cabal-like text
+layout instead of JSON, for eyeballing.
+
+## Conditional encoding
+
+Conditions appear as JSON objects. A variable is one of:
+
+```json
+{"flag": "name"}     {"os": "linux"}     {"arch": "x86_64"}     {"impl": "ghc", "range": ">=9.4"}
+```
+
+and these combine with:
+
+```json
+{"not": <cond>}      {"and": [<cond>, <cond>]}      {"or": [<cond>, <cond>]}
+```
+
+In the **default** output, a conditional field value is a list that may mix plain values
+with guard objects of the form:
+
+```json
+{"_if": <cond>, "_then": [<values>]}
+```
+
+`else` branches are folded into the guard as `{"not": <cond>}`, so default output never
+emits `_else`. In **`--pristine`** output, the untransformed tree is rendered as
+`[<value>, {"_if": <cond>, "_then": <subtree>, "_else": <subtree>}]`, where `_else` may
+appear and `_then`/`_else` are themselves subtrees.
+
 ## Author
 
 Andrea Bedini (andrea@andreabedini.com)
