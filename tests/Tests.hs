@@ -57,7 +57,16 @@ unitTests =
             [("a", 1), ("b", 2)]
             []
             [("a", This 1), ("b", This 2)]
+        , testFromListWith
         ]
+
+testFromListWith :: TestTree
+testFromListWith =
+    testCase "fromListWith merges non-adjacent duplicate keys, preserving first-occurrence order" $
+        assertEqual
+            "assert"
+            (ListMap.fromList [("a", [1, 3]), ("b", [2 :: Int])])
+            (ListMap.fromListWith (<>) [("a", [1]), ("b", [2]), ("a", [3])])
 
 mkTest :: FilePath -> FilePath -> FilePath -> [String] -> TestTree
 mkTest name cabalfile ext args =

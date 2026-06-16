@@ -13,7 +13,6 @@ module Cabal.Syntax.ListMap
     , unionWith
     ) where
 
-import Data.Foldable1 (foldl1')
 import Data.Function (on)
 import Data.List (partition)
 import Data.List.NonEmpty qualified as NE
@@ -46,11 +45,19 @@ fromList =
         . map NE.last
         . NE.groupBy ((==) `on` fst)
 
-fromListWith :: (Semigroup v, Eq k) => (v -> v -> v) -> [(k, v)] -> ListMap k v
-fromListWith f =
-    ListMap
-        . map (\ne -> (fst (NE.head ne), foldl1' f (NE.map snd ne)))
-        . NE.groupBy ((==) `on` fst)
+fromListWith :: Eq k => (v -> v -> v) -> [(k, v)] -> ListMap k v
+fromListWith f = foldl' (\acc (k, v) -> insertWith f k v acc) empty
+
+-- | Insert a key/value, merging with any existing value for the key (existing
+-- value on the left of @f@) and preserving the position of the key's first
+-- occurrence. Appends if the key is absent.
+insertWith :: Eq k => (v -> v -> v) -> k -> v -> ListMap k v -> ListMap k v
+insertWith f k new (ListMap kvs) = ListMap (go kvs)
+  where
+    go [] = [(k, new)]
+    go ((k', old) : rest)
+        | k' == k = (k', f old new) : rest
+        | otherwise = (k', old) : go rest
 
 instance Eq k => Semialign (ListMap k) where
     align (ListMap lm) (ListMap rm) = ListMap $ go lm rm
