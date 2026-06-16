@@ -1,18 +1,36 @@
 # Cabal-syntax-json
 
-This package provides a robust JSON representation of cabal files. While it is not the first
-or the only package to do so, I believe it has some interesting features that make it worth:
+[![CI](https://github.com/andreabedini/Cabal-syntax-json/actions/workflows/haskell.yml/badge.svg)](https://github.com/andreabedini/Cabal-syntax-json/actions/workflows/haskell.yml)
 
-1. Simple. Zero non-boot dependency, you only need GHC.
-2. Robust. It uses Cabal-syntax own code and makes no assumptions on the fields.
-3. Helpful. It transforms if conditions in a format easier to handle.
-4. Flexible. It can simplify those conditionals based on flags passed on the cli.
+Turn a `.cabal` file into a robust JSON representation, ready to be consumed by other
+tools. The package ships a library plus the `cabal2json` executable.
 
-This tool is aimed to build-system developers who need to extract information about a package to drive the build process.
+It is not the first package to render cabal files as JSON, but a few things set it apart:
+
+1. **Simple.** Zero non-boot dependencies — all you need is GHC.
+2. **Robust.** It is built on `Cabal-syntax`'s own parser and field grammars, so it makes
+   no assumptions about individual fields.
+3. **Helpful.** It rewrites `if`/`else` conditionals into a shape that is easier to
+   consume programmatically.
+4. **Flexible.** Those conditionals can be partially evaluated against flags, OS, arch,
+   and compiler passed on the command line.
+
+It is aimed at build-system developers who need to extract package information to drive a
+build.
+
+## Build
+
+```sh
+cabal build
+cabal run cabal2json -- path/to/package.cabal
+```
+
+The runtime dependency footprint is restricted to GHC boot packages (see
+`cabal.project`), so a plain `cabal build` against any supported GHC just works.
 
 ## Usage
 
-```
+```text
 Usage: cabal2json [OPTION...] files...
   -h           --help               Print this help message
                --out=FILE           Path for output
@@ -27,7 +45,14 @@ Usage: cabal2json [OPTION...] files...
 
 ## Example
 
-Using [template-haskell-2.19.0.0](https://hackage.haskell.org/package/template-haskell-2.19.0.0/revision/0.cabal), `cabal2json` produces:
+Run against
+[template-haskell-2.19.0.0](https://hackage.haskell.org/package/template-haskell-2.19.0.0/revision/0.cabal),
+`cabal2json` produces the JSON below. Note how the `vendor-filepath` conditional has been
+pushed *inside* `other-modules`, `default-extensions`, `build-depends`, and
+`hs-source-dirs`, each value carrying the condition that guards it:
+
+<details>
+<summary><code>cabal2json template-haskell.cabal</code></summary>
 
 ```json
 {
@@ -183,7 +208,13 @@ Using [template-haskell-2.19.0.0](https://hackage.haskell.org/package/template-h
 }
 ```
 
-Activating the flag `vendor-filepath` with `cabal2json --flag +vendor-filepath` produces:
+</details>
+
+Activating the flag with `cabal2json --flag +vendor-filepath` resolves those conditionals
+away and emits the `flags` block:
+
+<details>
+<summary><code>cabal2json --flag +vendor-filepath template-haskell.cabal</code></summary>
 
 ```json
 {
@@ -299,69 +330,83 @@ Activating the flag `vendor-filepath` with `cabal2json --flag +vendor-filepath` 
 }
 ```
 
-## Details
+</details>
 
-The JSON representation is obtained through the following steps:
-- A cabal file is parsed using `readGenericPackageDescription`.
-- The cli flags are used to simplify the conditionals.
-- The conditionals are pushed down into the field values. E.g.
+## How it works
 
-  ```cabal
-      if flag(vendor-filepath)
-        other-modules:
-          System.FilePath
-          System.FilePath.Posix
-          System.FilePath.Windows
-        hs-source-dirs:
-          ./vendored-filepath
-          .
-        default-extensions:
-          ImplicitPrelude
-      else
-        build-depends:
-          filepath
-        hs-source-dirs:
-          .
-  ```
-  is transformed into:
-  ```cabal
-      other-modules:
-        if flag(vendor-filepath)
-          System.FilePath
-          System.FilePath.Posix
-          System.FilePath.Windows
-      hs-source-dirs:
-        if flag(vendor-filepath)
-          ./vendored-filepath
-          .
-      default-extensions:
-        if flag(vendor-filepath)
-          ImplicitPrelude
-      build-depends:
-        if !flag(vendor-filepath)
-          filepath
-      hs-source-dirs:
-        if !flag(vendor-filepath)
-          .
-  ```
-  In other words, a tree of fields is transformed into fields of trees.
-- Lastly the tree is flattened into a list where every field value is guarded by its cumulative conditionals.
-  ```cabal
-    if impl(ghc >= 8.0)
-      if flag(os-string)
-        build-depends: filepath >= 1.5.0.0, os-string >= 2.0.0
-      else
-        build-depends: filepath >= 1.4.100.0 && < 1.5.0.0
-  ```
-  becomes
-  ```cabal
-    build-depends:
-      if impl(ghc >= 8.0) && flag(os-string)
-        filepath >= 1.5.0.0
-        os-string >= 2.0.0
-      if impl(ghc >= 8.0) && !flag(os-string)
-        filepath >= 1.4.100.0 && < 1.5.0.0
-  ```
+The JSON representation is built by a pipeline of stages (the per-component core lives in
+`Cabal.Syntax.Pipeline`):
+
+1. **Parse** the cabal file with `readGenericPackageDescription`.
+2. **Simplify** the conditionals against the CLI assignment (flags, OS, arch, compiler).
+   Conditions that can't be decided from a partial assignment are left intact.
+3. **Push conditionals down** into the field values. A *tree of fields* becomes *fields of
+   trees*. For example:
+
+   ```cabal
+       if flag(vendor-filepath)
+         other-modules:
+           System.FilePath
+           System.FilePath.Posix
+           System.FilePath.Windows
+         hs-source-dirs:
+           ./vendored-filepath
+           .
+         default-extensions:
+           ImplicitPrelude
+       else
+         build-depends:
+           filepath
+         hs-source-dirs:
+           .
+   ```
+
+   becomes
+
+   ```cabal
+       other-modules:
+         if flag(vendor-filepath)
+           System.FilePath
+           System.FilePath.Posix
+           System.FilePath.Windows
+       hs-source-dirs:
+         if flag(vendor-filepath)
+           ./vendored-filepath
+           .
+       default-extensions:
+         if flag(vendor-filepath)
+           ImplicitPrelude
+       build-depends:
+         if !flag(vendor-filepath)
+           filepath
+       hs-source-dirs:
+         if !flag(vendor-filepath)
+           .
+   ```
+
+4. **Flatten** each field's tree into a list whose values are guarded by their *cumulative*
+   condition. Nested conditions collapse into a single conjunction:
+
+   ```cabal
+     if impl(ghc >= 8.0)
+       if flag(os-string)
+         build-depends: filepath >= 1.5.0.0, os-string >= 2.0.0
+       else
+         build-depends: filepath >= 1.4.100.0 && < 1.5.0.0
+   ```
+
+   becomes
+
+   ```cabal
+     build-depends:
+       if impl(ghc >= 8.0) && flag(os-string)
+         filepath >= 1.5.0.0
+         os-string >= 2.0.0
+       if impl(ghc >= 8.0) && !flag(os-string)
+         filepath >= 1.4.100.0 && < 1.5.0.0
+   ```
+
+5. **Render** the result as JSON.
 
 ## Output modes
 
@@ -404,6 +449,6 @@ emits `_else`. In **`--pristine`** output, the untransformed tree is rendered as
 `[<value>, {"_if": <cond>, "_then": <subtree>, "_else": <subtree>}]`, where `_else` may
 appear and `_then`/`_else` are themselves subtrees.
 
-## Author
+## License
 
-Andrea Bedini (andrea@andreabedini.com)
+MIT. Authored by Andrea Bedini (andrea@andreabedini.com).
