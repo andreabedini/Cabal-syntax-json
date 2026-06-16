@@ -13,7 +13,6 @@ module Cabal.Syntax.CondTree
 
       -- ** Transformations
     , pushConditionals
-    , simplifyCondTree
     , Guarded (..)
     , defragment
     , flattenCondTree
@@ -26,7 +25,7 @@ import Data.List.NonEmpty qualified as NE
 
 import Distribution.PackageDescription (cNot)
 import Distribution.Types.CondTree qualified as C (CondBranch (..), CondTree (..))
-import Distribution.Types.Condition (Condition (..), cAnd, simplifyCondition)
+import Distribution.Types.Condition (Condition (..), cAnd)
 import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Utils.Json (Json (..), (.=))
 
@@ -105,38 +104,6 @@ pushConditionals (CondTree nodes) = foldMap1 go nodes
             )
             (pushConditionals t)
             (pushConditionals e)
-
--- | Simplifies a CondTree using a partial flag assignment. Conditions that
--- cannot be evaluated are left untouched.
-simplifyCondTree
-    :: forall v a
-     . Monoid a
-    => (v -> Either v Bool)
-    -> CondTree v a
-    -> Maybe (CondTree v a)
-simplifyCondTree eval (CondTree nodes) =
-    CondTree <$> NE.nonEmpty (foldMap go nodes)
-  where
-    go :: CondNode v a -> [CondNode v a]
-    go (CondNode a) =
-        [CondNode a]
-    go (CondIfThen c (CondTree ts)) =
-        case fst (simplifyCondition c eval) of
-            Lit True ->
-                NE.toList ts
-            Lit False -> []
-            c' -> case NE.nonEmpty (foldMap go ts) of
-                Nothing -> []
-                Just ts' -> [CondIfThen c' (CondTree ts')]
-    go (CondIfThenElse c (CondTree ts) (CondTree es)) =
-        case fst (simplifyCondition c eval) of
-            Lit True ->
-                NE.toList ts
-            Lit False ->
-                NE.toList es
-            c' -> case NE.nonEmpty (foldMap go ts <> foldMap go es) of
-                Nothing -> []
-                Just ts' -> [CondIfThen c' (CondTree ts')]
 
 -- | Convert 'Distribution.Types.CondTree.CondTree' from Cabal-syntax into our 'CondTree'.
 convertCondTree :: C.CondTree v c a -> CondTree v a
