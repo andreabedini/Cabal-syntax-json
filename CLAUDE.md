@@ -22,11 +22,42 @@ transformation.
 cabal build
 cabal run -- golden-tests           # run the whole test suite (unit + golden)
 cabal run -- golden-tests -p text   # run only tests whose name matches "text" (tasty -p)
-fourmolu -i src app tests           # format (config in fourmolu.yaml; runs on pre-commit)
+sh tests/run.sh "$(cabal list-bin cabal2json)"   # check a built binary against the goldens
+fourmolu -i src app tests           # format (config in fourmolu.yaml)
 ```
 
-Toolchain is pinned via `mise.toml` (cocogitto, lefthook, release-please, fourmolu
-0.18.0.0). CI builds on GHC 9.10.1 across Linux/macOS/Windows.
+Toolchain is pinned via `mise.toml` (git-cliff, jq, fourmolu 0.18.0.0). There are no
+commit hooks, so run fourmolu before committing.
+
+### CI
+
+CI (`.github/workflows/ci.yml`) never rebuilds after testing, so released binaries are
+exactly the tested ones:
+
+- **build**: builds with GHC 9.10.3 and 9.12.2 (cabal 3.18.1.0) for x86_64/aarch64 Linux,
+  x86_64/aarch64 macOS and x86_64 Windows, runs the full test suite, and uploads a stripped
+  `cabal2json` in an archive `cabal2json-VERSION-TARGET`. Linux builds run on
+  `ubuntu-22.04` (glibc ≥ 2.35) and may only link glibc, libgmp and zlib; macOS builds
+  only system libraries.
+- **test**: unpacks the archive on another runner and runs `tests/run.sh` on it: every
+  golden `.cabal` file without flags, compared with its `.json`.
+- **sdist**: `cabal sdist all`, the source distribution of every package in
+  `cabal.project`. It contains only what the `.cabal` file lists (`extra-doc-files` etc.),
+  not the whole checkout.
+- **commits** (PRs only): runs git-cliff (`orhun/git-cliff-action`) with `cliff.toml` over
+  the PR's commits, with its changelog filters turned off by `GIT_CLIFF__GIT__*`
+  overrides, so it fails on a commit that is not conventional or whose type no commit
+  parser in `cliff.toml` knows.
+- **ci-ok**: fails if `build`, `test`, `sdist` or `commits` failed or was cancelled. It is
+  the only check the ruleset should require. Keep its `if: always()`.
+- **release** (pushes to `main`): runs only when the head commit's subject starts with
+  `chore(release): `, and fails unless VERSION matches the `.cabal` file. It publishes an
+  immutable GitHub release with the GHC `RELEASE_GHC` (9.12.2) archives and the source
+  distributions of this run, `SHA256SUMS`, build attestations, and the matching
+  `CHANGELOG.md` section as notes. Publishing creates the tag `vVERSION`.
+
+Every action is pinned to a full commit SHA with the version in a comment; Dependabot
+updates the pins.
 
 `cabal.project` constrains `bytestring`, `containers`, `Cabal`, `Cabal-syntax`, and
 `pretty` to `installed` (the GHC boot versions) — this is deliberate, keeping the runtime
@@ -101,9 +132,22 @@ intermediate representation. Stages:
 
 - Default language is `GHC2021`; `-Wall` is on for both the library (`cabal.project`) and
   the executable (`.cabal ghc-options`).
-- Formatting is enforced by fourmolu (4-space indent, 100 col, leading commas/arrows);
-  the lefthook `pre-commit` hook runs it on staged `.hs` files.
-- Commits are validated by cocogitto (`cog verify`) on `commit-msg` — use Conventional
-  Commits. Versioning/releases are automated via release-please; the version in the
-  `.cabal` file is managed between the `x-release-please` markers, so do not bump it by
-  hand.
+- Format with fourmolu (4-space indent, 100 col, leading commas/arrows) before
+  committing; no hook does it.
+- Commits follow Conventional Commits: `feat`, `fix`, `perf`, `docs`, `ci`, `test`,
+  `refactor`, `build`, `chore`, `style` or `revert`, with `!` or a `BREAKING CHANGE:`
+  footer for a breaking change. The allowed types are the commit parsers in `cliff.toml`.
+  The `commits` CI job enforces this.
+- Versions follow the PVP with four components, `A.B.C.D` (for example `0.1.0.0`); never
+  turn a version into three components. git-cliff bumps `B.C.D` as SemVer would (`[bump]`
+  in `cliff.toml`): a breaking change bumps `B`, `feat` bumps `C`, `fix`/`perf` bump `D`,
+  other types make no release; there is no special rule below 1.0. `A` changes only by
+  hand. Tags are `vVERSION`. Without any tag, the first release is `[bump] initial_tag`,
+  `v0.1.0.0`.
+- The `version:` field in `Cabal-syntax-json.cabal` is the only source of the version.
+  Only `mise run release-pr` (`.mise/tasks/release-pr`, a zsh script) and the owner change
+  it and `CHANGELOG.md`; don't edit either otherwise, and don't run the task yourself (it
+  pushes a branch and opens a PR). The task takes the next version from `git cliff
+  --bumped-version` (`cliff.toml`), regenerates `CHANGELOG.md`, and opens a
+  PR `chore(release): VERSION`; merging it makes the `release` job publish. See
+  `CONTRIBUTING.md`.

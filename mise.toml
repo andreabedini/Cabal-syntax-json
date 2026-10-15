@@ -1,5 +1,4 @@
 [tools]
-cocogitto = "latest"
-lefthook = "latest"
-"npm:release-please" = "latest"
+git-cliff = "2.14.2"
+jq = "1.8.2"
 "ubi:fourmolu/fourmolu" = "0.18.0.0"
