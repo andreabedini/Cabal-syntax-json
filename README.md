@@ -1,6 +1,6 @@
 # Cabal-syntax-json
 
-[![CI](https://github.com/andreabedini/Cabal-syntax-json/actions/workflows/haskell.yml/badge.svg)](https://github.com/andreabedini/Cabal-syntax-json/actions/workflows/haskell.yml)
+[![CI](https://github.com/andreabedini/Cabal-syntax-json/actions/workflows/ci.yml/badge.svg)](https://github.com/andreabedini/Cabal-syntax-json/actions/workflows/ci.yml)
 
 Turn a `.cabal` file into a robust JSON representation, ready to be consumed by other
 tools. The package ships a library plus the `cabal2json` executable.
