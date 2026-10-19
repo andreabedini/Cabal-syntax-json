@@ -18,6 +18,51 @@ It is not the first package to render cabal files as JSON, but a few things set 
 It is aimed at build-system developers who need to extract package information to drive a
 build.
 
+## Install
+
+### Pre-built binaries
+
+Download the archive for your platform from the [latest release](https://github.com/andreabedini/Cabal-syntax-json/releases/latest) and unpack it. It contains the `cabal2json` executable. There are archives for x86_64 and aarch64 Linux, x86_64 and aarch64 macOS, and x86_64 Windows.
+
+- Linux binaries need glibc 2.34 or newer (e.g. Ubuntu 22.04, Debian 12, RHEL 9), libgmp and zlib.
+- macOS binaries are not notarised. Remove the quarantine attribute before running one: `xattr -d com.apple.quarantine cabal2json`.
+
+Each release also has `SHA256SUMS`, and a GitHub attestation for every file. To check an archive:
+
+```
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify ARCHIVE --repo andreabedini/Cabal-syntax-json
+```
+
+### With mise
+
+[mise](https://mise.jdx.dev/) installs the release archive for your platform with its [GitHub backend](https://mise.jdx.dev/dev-tools/backends/github.html), and checks its checksum and attestation:
+
+```
+mise use -g github:andreabedini/Cabal-syntax-json
+```
+
+Add `@VERSION` to pin a version, for example `github:andreabedini/Cabal-syntax-json@0.1.0.0`. Without `-g`, the tool is added to the current project's `mise.toml`.
+
+### From source
+
+Each release has the source distribution of every package, `PACKAGE-VERSION.tar.gz`. With GHC 9.10 or 9.12 and cabal:
+
+```
+tar -xzf Cabal-syntax-json-VERSION.tar.gz
+cd Cabal-syntax-json-VERSION
+cabal install exe:cabal2json
+```
+
+## Documentation
+
+The API documentation of the latest release is at
+<https://andreabedini.github.io/Cabal-syntax-json/>.
+
+Each [release](https://github.com/andreabedini/Cabal-syntax-json/releases) also has the
+documentation of every package with a library, as
+`PACKAGE-VERSION-docs.tar.gz`, in the format Hackage takes.
+
 ## Build
 
 ```sh
