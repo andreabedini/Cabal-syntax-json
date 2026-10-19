@@ -4,10 +4,11 @@ Bug reports and pull requests are welcome.
 
 ## Building
 
-You need GHC 9.10 or 9.12 and a recent cabal (CI uses 3.18.1.0). `cabal.project` pins `Cabal`, `Cabal-syntax` and the other dependencies to the versions that come with GHC.
+You need GHC 9.10 or 9.12 and a recent cabal (CI uses 3.18.1.0). `cabal.project` pins `Cabal`, `Cabal-syntax` and the other dependencies to the versions that come with GHC, so the library and `cabal2json` depend only on GHC's boot packages.
 
 ```
 cabal build
+cabal run cabal2json -- path/to/package.cabal
 ```
 
 ## Testing

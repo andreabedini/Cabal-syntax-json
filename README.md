@@ -22,12 +22,18 @@ build.
 
 ### Pre-built binaries
 
-Download the archive for your platform from the [latest release](https://github.com/andreabedini/Cabal-syntax-json/releases/latest) and unpack it. It contains the `cabal2json` executable. There are archives for x86_64 and aarch64 Linux, x86_64 and aarch64 macOS, and x86_64 Windows.
+Download the archive for your platform from the
+[latest release](https://github.com/andreabedini/Cabal-syntax-json/releases/latest) and unpack it. It
+contains the `cabal2json` executable. There are archives for x86_64 and aarch64 Linux,
+x86_64 and aarch64 macOS, and x86_64 Windows.
 
-- Linux binaries need glibc 2.34 or newer (e.g. Ubuntu 22.04, Debian 12, RHEL 9), libgmp and zlib.
-- macOS binaries are not notarised. Remove the quarantine attribute before running one: `xattr -d com.apple.quarantine cabal2json`.
+- Linux binaries need glibc 2.34 or newer (e.g. Ubuntu 22.04, Debian 12, RHEL 9), libgmp
+  and zlib.
+- macOS binaries are not notarised. Remove the quarantine attribute before running one:
+  `xattr -d com.apple.quarantine cabal2json`.
 
-Each release also has `SHA256SUMS`, and a GitHub attestation for every file. To check an archive:
+Each release also has `SHA256SUMS`, and a GitHub attestation for every file. To check an
+archive:
 
 ```
 sha256sum --check --ignore-missing SHA256SUMS
@@ -36,23 +42,30 @@ gh attestation verify ARCHIVE --repo andreabedini/Cabal-syntax-json
 
 ### With mise
 
-[mise](https://mise.jdx.dev/) installs the release archive for your platform with its [GitHub backend](https://mise.jdx.dev/dev-tools/backends/github.html), and checks its checksum and attestation:
+[mise](https://mise.jdx.dev/) installs the release archive for your platform with its
+[GitHub backend](https://mise.jdx.dev/dev-tools/backends/github.html), and checks its
+checksum and attestation:
 
 ```
 mise use -g github:andreabedini/Cabal-syntax-json
 ```
 
-Add `@VERSION` to pin a version, for example `github:andreabedini/Cabal-syntax-json@0.1.0.0`. Without `-g`, the tool is added to the current project's `mise.toml`.
+Add `@VERSION` to pin a version, for example
+`github:andreabedini/Cabal-syntax-json@0.1.0.0`. Without `-g`, the tool is added to the
+current project's `mise.toml`.
 
 ### From source
 
-Each release has the source distribution of every package, `PACKAGE-VERSION.tar.gz`. With GHC 9.10 or 9.12 and cabal:
+Each release has the source distribution of every package, `PACKAGE-VERSION.tar.gz`. With
+GHC 9.10 or 9.12 and cabal:
 
 ```
 tar -xzf Cabal-syntax-json-VERSION.tar.gz
 cd Cabal-syntax-json-VERSION
 cabal install exe:cabal2json
 ```
+
+To build from a checkout instead, see [CONTRIBUTING.md](CONTRIBUTING.md#building).
 
 ## Documentation
 
@@ -62,16 +75,6 @@ The API documentation of the latest release is at
 Each [release](https://github.com/andreabedini/Cabal-syntax-json/releases) also has the
 documentation of every package with a library, as
 `PACKAGE-VERSION-docs.tar.gz`, in the format Hackage takes.
-
-## Build
-
-```sh
-cabal build
-cabal run cabal2json -- path/to/package.cabal
-```
-
-The runtime dependency footprint is restricted to GHC boot packages (see
-`cabal.project`), so a plain `cabal build` against any supported GHC just works.
 
 ## Usage
 
@@ -499,7 +502,8 @@ The output is a JSON object. Its keys, in this order, are:
 
 - **The package's fields**, named as in the `.cabal` file (`name`, `version`,
   `synopsis`, `extra-source-files`, …). A single-valued field is a string. A list-valued
-  field is an array of strings. `tested-with` is an array of `[compiler, version range]` pairs.
+  field is an array of strings. `tested-with` is an array of `[compiler, version range]`
+  pairs.
   Custom `x-` fields are strings, under their own names.
 - **`custom-setup`**, if the package has a `custom-setup` section: an object with its
   fields, such as `setup-depends`.
@@ -514,8 +518,8 @@ The output is a JSON object. Its keys, in this order, are:
 ### Component fields
 
 A field that no open condition affects has a plain value: a string for a single-valued
-field (`main-is`, `default-language`), `true` or `false` for `buildable`, or an array for a
-list-valued field (`exposed-modules`, `ghc-options`, `build-depends`).
+field (`main-is`, `default-language`), `true` or `false` for `buildable`, or an array for
+a list-valued field (`exposed-modules`, `ghc-options`, `build-depends`).
 
 A field that some open condition affects is always an array, even for a single-valued
 field. Each element is either a plain value, which always applies, or a guard:

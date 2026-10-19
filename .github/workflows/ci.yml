@@ -268,7 +268,7 @@ jobs:
       - name: Documentation for Hackage
         run: |
           cabal haddock all --haddock-for-hackage
-          # The repository has a docs directory of its own.
+          # -p: the repository may track a docs directory of its own.
           mkdir -p docs
           mv dist-newstyle/*-docs.tar.gz docs/
 
