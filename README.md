@@ -94,7 +94,8 @@ Run against
 [template-haskell-2.19.0.0](https://hackage.haskell.org/package/template-haskell-2.19.0.0/revision/0.cabal),
 `cabal2json` produces the JSON below. Note how the `vendor-filepath` conditional has been
 pushed *inside* `other-modules`, `default-extensions`, `build-depends`, and
-`hs-source-dirs`, each value carrying the condition that guards it:
+`hs-source-dirs`, each value carrying the condition that guards it, and how the `flags`
+block declares the flag with its default:
 
 <details>
 <summary><code>cabal2json template-haskell.cabal</code></summary>
@@ -125,6 +126,13 @@ pushed *inside* `other-modules`, `default-extensions`, `build-depends`, and
       "type": "git",
       "location": "https://gitlab.haskell.org/ghc/ghc.git",
       "subdir": "libraries/template-haskell"
+    }
+  },
+  "flags": {
+    "vendor-filepath": {
+      "description": "Vendor the dependency on filepath",
+      "default": false,
+      "manual": true
     }
   },
   "components": {
@@ -256,7 +264,8 @@ pushed *inside* `other-modules`, `default-extensions`, `build-depends`, and
 </details>
 
 Activating the flag with `cabal2json --flag +vendor-filepath` resolves those conditionals
-away and emits the `flags` block:
+away and drops the flag from the `flags` block, which lists only the flags still left
+open (here none, so the block is gone):
 
 <details>
 <summary><code>cabal2json --flag +vendor-filepath template-haskell.cabal</code></summary>
@@ -287,13 +296,6 @@ away and emits the `flags` block:
       "type": "git",
       "location": "https://gitlab.haskell.org/ghc/ghc.git",
       "subdir": "libraries/template-haskell"
-    }
-  },
-  "flags": {
-    "vendor-filepath": {
-      "description": "Vendor the dependency on filepath",
-      "default": false,
-      "manual": true
     }
   },
   "components": {

@@ -8,7 +8,7 @@
 -- the caller did not pin down.
 module Cabal.Syntax.Simplify where
 
-import Distribution.Compat.Prelude (isJust, partitionEithers)
+import Distribution.Compat.Prelude (isNothing, partitionEithers)
 import Distribution.Compiler (CompilerId (..))
 import Distribution.System (Arch, OS)
 import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
@@ -68,9 +68,10 @@ simplifyCondBranch eval (CondBranch cv t me) =
         Lit False -> Left $ maybe mempty (simplifyCondTree eval) me
         cv' -> Right $ CondBranch cv' (simplifyCondTree eval t) (fmap (simplifyCondTree eval) me)
 
--- | Filter out the flags defined in the environment
+-- | Drop the flags that the environment assigns: their conditions are already
+-- evaluated away, so only the flags left open stay in the package.
 filterFlags :: Env -> [PackageFlag] -> [PackageFlag]
-filterFlags Env{envFlags} = filter (\f -> isJust $ lookupFlagAssignment (flagName f) envFlags)
+filterFlags Env{envFlags} = filter (\f -> isNothing $ lookupFlagAssignment (flagName f) envFlags)
 
 -- | A partial assignment of the configuration variables: whichever of the operating
 -- system, architecture, compiler, and flags were pinned on the command line. Anything
