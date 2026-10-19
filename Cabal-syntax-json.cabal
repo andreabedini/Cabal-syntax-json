@@ -8,11 +8,11 @@ build-type:      Simple
 extra-doc-files: CHANGELOG.md
 
 library
-  build-depends:      base         ^>=4.19 || ^>=4.20 || ^>=4.21
-                    , bytestring   ^>=0.11 || ^>=0.12
-                    , containers    >=0.6.8
-                    , Cabal        ^>=3.10 || ^>=3.12 || ^>=3.14
-                    , Cabal-syntax ^>=3.10 || ^>=3.12 || ^>=3.14
+  build-depends:      base         ^>=4.20 || ^>=4.21
+                    , bytestring   ^>=0.12
+                    , containers   ^>=0.7
+                    , Cabal        ^>=3.12 || ^>=3.14
+                    , Cabal-syntax ^>=3.12 || ^>=3.14
                     , pretty       ^>=1.1
   exposed-modules:    Cabal.Syntax.Compat
                       Cabal.Syntax.CondTree
