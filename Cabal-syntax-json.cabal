@@ -1,11 +1,27 @@
 cabal-version:   3.8
 name:            Cabal-syntax-json
 version:         0.1.0.0
+synopsis:        Turn a .cabal file into a robust JSON representation
+description:
+  Render a @.cabal@ file as JSON, using @Cabal-syntax@'s own parser and field
+  grammars. Conditionals are pushed down into each field, so every value
+  carries the condition under which it applies, and can be partially
+  evaluated against flags, operating system, architecture and compiler.
+  The package ships a library and the @cabal2json@ executable.
+category:        Distribution
+homepage:        https://github.com/andreabedini/Cabal-syntax-json
+bug-reports:     https://github.com/andreabedini/Cabal-syntax-json/issues
 license:         MIT
-author:          andrea@andreabedini.com
-maintainer:      Andrea Bedini
+license-file:    LICENSE
+author:          Andrea Bedini
+maintainer:      andrea@andreabedini.com
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
+                 README.md
+
+source-repository head
+  type:     git
+  location: https://github.com/andreabedini/Cabal-syntax-json
 
 library
   build-depends:      base         ^>=4.20 || ^>=4.21
