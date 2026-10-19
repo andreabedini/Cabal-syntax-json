@@ -128,9 +128,6 @@ block declares the flag with its default:
   "license-file": [
     "LICENSE"
   ],
-  "license-files": [
-    "LICENSE"
-  ],
   "maintainer": "libraries@haskell.org",
   "bug-reports": "https://gitlab.haskell.org/ghc/ghc/issues/new",
   "synopsis": "Support library for Template Haskell",
@@ -296,9 +293,6 @@ open (here none, so the block is gone):
   "version": "2.19.0.0",
   "license": "BSD3",
   "license-file": [
-    "LICENSE"
-  ],
-  "license-files": [
     "LICENSE"
   ],
   "maintainer": "libraries@haskell.org",
@@ -505,6 +499,8 @@ The output is a JSON object. Its keys, in this order, are:
   field is an array of strings. `tested-with` is an array of `[compiler, version range]`
   pairs.
   Custom `x-` fields are strings, under their own names.
+  `license-file` lists every licence file, whether the `.cabal` file names them with
+  `license-file` or `license-files`.
 - **`custom-setup`**, if the package has a `custom-setup` section: an object with its
   fields, such as `setup-depends`.
 - **`source-repositories`**, if there are any: an object with one key per repository

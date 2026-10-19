@@ -1,0 +1,10 @@
+cabal-version: 3.0
+name:          license-files
+version:       0.1.0.0
+license:       BSD-3-Clause
+license-files: LICENSE NOTICE
+
+library
+  exposed-modules:  M
+  build-depends:    base
+  default-language: Haskell2010
