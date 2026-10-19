@@ -6,7 +6,7 @@
 --
 -- We roll our own rather than depend on @aeson@ so the package's runtime footprint
 -- stays within the GHC boot libraries; 'Json' itself is reused from @Cabal-syntax@
--- and re-exported here. The 'ViaPretty' and 'ViaUnpack' newtypes supply most
+-- and re-exported here. The internal @ViaPretty@ and @ViaUnpack@ newtypes supply most
 -- instances by deriving — most cabal values render as their @Pretty@ string, and
 -- many are newtypes that just unwrap.
 module Cabal.Syntax.Json
@@ -88,18 +88,21 @@ class ToJSON a where
     toJSONList :: [a] -> Json
     toJSONList = listValue toJSON
 
--- | Helper function to use with 'liftToJSON', see 'listEncoding'.
+-- | Encode each element and collect the results in a JSON array: the default
+-- 'toJSONList'.
 listValue :: (a -> Json) -> [a] -> Json
 listValue f = JsonArray . map f
 
 -- | A single member of a JSON object: a key and its value.
 type Pair = (String, Json)
 
+-- | Render a value as the JSON string of its 'Pretty' form. For deriving via.
 newtype ViaPretty a = ViaPretty a
 
 instance Pretty a => ToJSON (ViaPretty a) where
     toJSON (ViaPretty a) = JsonString $ prettyShow a
 
+-- | Render a 'Newtype' as the JSON of the value it wraps. For deriving via.
 newtype ViaUnpack a = ViaUnpack a
 
 instance (ToJSON o, Newtype o n) => ToJSON (ViaUnpack n) where

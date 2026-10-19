@@ -65,8 +65,8 @@ newtype CondTree v a = CondTree (NonEmpty (CondNode v a))
     deriving (Show, Functor, Foldable, Traversable, Semigroup)
     deriving Foldable1 via Compose NonEmpty (CondNode v)
 
--- | A 'CondNode' either carries a value of type 'a' or a conditional
--- statement on the variables 'v', a 'CondTree' to follow if the condition is
+-- | A 'CondNode' either carries a value of type @a@ or a conditional
+-- statement on the variables @v@, a 'CondTree' to follow if the condition is
 -- true and, optionally, a 'CondTree' to follow if the condition is false.
 data CondNode v a
     = CondNode a
@@ -150,7 +150,7 @@ convertCondBranch (C.CondBranch c thenTree (Just elseTree)) =
         (convertCondTree thenTree)
         (convertCondTree elseTree)
 
--- | A value 'a' guarded by a 'Condition' on variables 'v'.
+-- | A value of type @a@ guarded by a 'Condition' on variables @v@.
 data Guarded v a = Guarded (Condition v) a
     deriving (Show, Eq, Functor, Foldable, Traversable)
 
