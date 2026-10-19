@@ -13,7 +13,7 @@ cabal build
 ## Testing
 
 ```
-cabal run -- golden-tests
+cabal run golden-tests
 ```
 
 This runs the unit tests and the golden tests. For each `.cabal` file in `tests/golden/`, the golden tests run `cabal2json` without flags, with each package flag set to `+` and to `-`, and with `--os` set to windows, linux and osx, and compare the output with the committed `.json` files. If you change the output on purpose, the actual output is in a sibling `.json.out` file: check the diff, then move it over the `.json` file. To add a fixture, add a `.cabal` file to `tests/golden/` and create its golden files the same way.

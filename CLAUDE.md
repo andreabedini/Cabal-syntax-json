@@ -20,8 +20,8 @@ transformation.
 
 ```sh
 cabal build
-cabal run -- golden-tests           # run the whole test suite (unit + golden)
-cabal run -- golden-tests -p text   # run only tests whose name matches "text" (tasty -p)
+cabal run golden-tests              # run the whole test suite (unit + golden)
+cabal run golden-tests -- -p text   # run only tests whose name matches "text" (tasty -p)
 sh tests/run.sh "$(cabal list-bin cabal2json)"   # check a built binary against the goldens
 fourmolu -i src app tests           # format (config in fourmolu.yaml)
 ```
@@ -80,7 +80,7 @@ The golden suite (`tests/Tests.hs`) lives in `tests/golden/`. For each `*.cabal`
 it runs `cabal2json` with no flags, with each package flag toggled `+`/`-`, and with
 `--os` set to windows/linux/osx, comparing against committed `.json` files. The runner
 shells out to the `cabal2json` binary (declared via `build-tool-depends`), so a stale
-build can cause confusing failures — `cabal run -- golden-tests` rebuilds first.
+build can cause confusing failures — `cabal run golden-tests` rebuilds first.
 
 To regenerate goldens after an intentional output change, tasty-golden writes the actual
 output to a sibling `.json.out`; review the diff, then `mv` the `.out` over the `.json`.
