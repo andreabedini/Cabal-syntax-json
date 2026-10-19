@@ -577,4 +577,4 @@ conditional:
 
 ## License
 
-MIT. Authored by Andrea Bedini (andrea@andreabedini.com).
+MIT, see [LICENSE](LICENSE). Authored by Andrea Bedini (andrea@andreabedini.com).
