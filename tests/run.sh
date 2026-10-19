@@ -1,7 +1,7 @@
 #!/bin/sh
 # Test a built cabal2json without a build tree: run it on every .cabal file
 # in tests/golden and compare the output with the committed .json file.
-# The full suite (flags, --os, unit tests) is `cabal run -- golden-tests`.
+# The full suite (flags, --os, unit tests) is `cabal run golden-tests`.
 #
 # Usage: tests/run.sh BINARY
 set -eu
