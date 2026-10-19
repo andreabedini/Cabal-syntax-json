@@ -88,6 +88,22 @@ Usage: cabal2json [OPTION...] files...
                --pristine           Preserve the conditional structure
 ```
 
+The arguments of the specialising options use Cabal's syntax:
+
+| Argument | Form | Example |
+|---|---|---|
+| `FLAG` | One or more flag assignments, separated by spaces: `+NAME` sets a flag, `-NAME` clears it. The option can be repeated. | `--flag '+pure-haskell -debug'` |
+| `COMPILER` | `FLAVOUR-VERSION` | `--compiler ghc-9.12.2` |
+| `OS` | An operating system as `os(...)` names it in a `.cabal` file | `--os linux` |
+| `ARCH` | An architecture as `arch(...)` names it | `--arch aarch64` |
+| `PLATFORM` | `ARCH-OS`; sets both | `--platform x86_64-linux` |
+
+An unknown compiler, OS or architecture is accepted with a warning on stderr.
+
+The output goes to stdout, or to `FILE` with `--out`. With several input files the output
+is one JSON object per file, in the order given, with nothing between them: read it with a
+parser for concatenated JSON, such as `jq`. `--out` takes a single input file.
+
 ## Example
 
 Run against
@@ -472,31 +488,92 @@ through them in detail, as stages 0 to 4.
 `--debug` is orthogonal to both: it renders the selected form in a cabal-like text
 layout instead of JSON, for eyeballing.
 
-## Conditional encoding
+## Output format
 
-Conditions appear as JSON objects. A variable is one of:
+This section describes the default JSON output. `--pristine` differs only in the
+components, as described at the end.
+
+### Top level
+
+The output is a JSON object. Its keys, in this order, are:
+
+- **The package's fields**, named as in the `.cabal` file (`name`, `version`,
+  `synopsis`, `extra-source-files`, …). A single-valued field is a string. A list-valued
+  field is an array of strings. `tested-with` is an array of `[compiler, version range]` pairs.
+  Custom `x-` fields are strings, under their own names.
+- **`custom-setup`**, if the package has a `custom-setup` section: an object with its
+  fields, such as `setup-depends`.
+- **`source-repositories`**, if there are any: an object with one key per repository
+  kind (`head`, `this`), whose value is an object of that repository's fields.
+- **`flags`**, if any flag is still open: an object with one key per flag that `--flag`
+  did not assign, whose value is an object with `description`, `default` and `manual`.
+- **`components`**: an object with one key per component, in this order: `lib` for the
+  main library, `lib:NAME` for each sub-library, then `flib:NAME`, `exe:NAME`,
+  `test:NAME` and `bench:NAME`. Each value is an object of the component's fields.
+
+### Component fields
+
+A field that no open condition affects has a plain value: a string for a single-valued
+field (`main-is`, `default-language`), `true` or `false` for `buildable`, or an array for a
+list-valued field (`exposed-modules`, `ghc-options`, `build-depends`).
+
+A field that some open condition affects is always an array, even for a single-valued
+field. Each element is either a plain value, which always applies, or a guard:
+
+```json
+{"_if": <condition>, "_then": <value>}
+```
+
+`_then` holds what applies when the condition is true: an array for a list-valued field,
+or the plain value for a single-valued one. The condition is the *cumulative* condition
+of the value: nested `if`s are joined with `and`, and an `else` branch is the negated
+condition, so the default output never has `_else`. For example:
+
+```json
+"buildable": [{"_if": {"not": {"flag": "ffi"}}, "_then": false}]
+```
+
+Dependencies are objects:
+
+| Field | Element |
+|---|---|
+| `build-depends`, `setup-depends` | `{"package": NAME, "version": RANGE, "libs": [LIB, …]}`; `libs` names the libraries used, with the package name standing for its main library |
+| `build-tool-depends` | `{"package": NAME, "version": RANGE, "exe": EXE}` |
+| `pkgconfig-depends` | `{"name": NAME, "version": RANGE}` |
+
+Version ranges, and fields such as `mixins`, `reexported-modules` and `build-tools`, are
+strings in `.cabal` syntax.
+
+### Conditions
+
+A condition is a variable, a literal or a combination. Variables are:
 
 ```json
 {"flag": "name"}     {"os": "linux"}     {"arch": "x86_64"}     {"impl": "ghc", "range": ">=9.4"}
 ```
 
-and these combine with:
+The literals are `true` and `false`. Conditions combine with:
 
 ```json
 {"not": <cond>}      {"and": [<cond>, <cond>]}      {"or": [<cond>, <cond>]}
 ```
 
-In the **default** output, a conditional field value is a list that may mix plain values
-with guard objects of the form:
+Conditions that the specialising options decide are evaluated away, so the output keeps
+only the conditions that are still open.
+
+### `--pristine`
+
+With `--pristine`, a component keeps Cabal's conditional structure. A component with no
+conditionals is an object of fields. A component with conditionals is an array whose
+first element is the object of unconditional fields, followed by one branch per
+conditional:
 
 ```json
-{"_if": <cond>, "_then": [<values>]}
+{"_if": <condition>, "_then": <component>, "_else": <component>}
 ```
 
-`else` branches are folded into the guard as `{"not": <cond>}`, so default output never
-emits `_else`. In **`--pristine`** output, the untransformed tree is rendered as
-`[<value>, {"_if": <cond>, "_then": <subtree>, "_else": <subtree>}]`, where `_else` may
-appear and `_then`/`_else` are themselves subtrees.
+`_then` and `_else` have the same form as a component, and `_else` appears only when the
+`.cabal` file has an `else`.
 
 ## License
 
