@@ -44,20 +44,31 @@ exactly the tested ones:
 - **sdist**: `cabal sdist all`, the source distribution of every package in
   `cabal.project`. It contains only what the `.cabal` file lists (`extra-doc-files` etc.),
   not the whole checkout.
+- **docs**: with `RELEASE_GHC`, `cabal haddock all --haddock-for-hackage` (the
+  `NAME-VERSION-docs.tar.gz` that `cabal upload --documentation` takes) and
+  `cabal haddock-project --hackage` (the GitHub Pages site, uploaded as a Pages artifact but
+  deployed only by `pages`). Both link dependencies to Hackage.
+- **dist**: collects the `RELEASE_GHC` archives, the sdists and the docs tarballs, checks
+  that they all have one version, adds `SHA256SUMS` and uploads them as one artifact
+  `dist`, on every event. `gh workflow run ci.yml --ref BRANCH` gives a release's files
+  without releasing.
 - **commits** (PRs only): runs git-cliff (`orhun/git-cliff-action`) with `cliff.toml` over
   the PR's commits, with its changelog filters turned off by `GIT_CLIFF__GIT__*`
   overrides, so it fails on a commit that is not conventional or whose type no commit
   parser in `cliff.toml` knows.
-- **ci-ok**: fails if `build`, `test`, `sdist` or `commits` failed or was cancelled. It is
-  the only check the ruleset should require. Keep its `if: always()`.
+- **ci-ok**: fails if `build`, `test`, `sdist`, `docs`, `dist` or `commits` failed or was
+  cancelled. It is the only check the ruleset should require. Keep its `if: always()`.
 - **release** (pushes to `main`): runs only when the head commit's subject starts with
-  `chore(release): `, and fails unless VERSION matches the `.cabal` file. It publishes an
-  immutable GitHub release with the GHC `RELEASE_GHC` (9.12.2) archives and the source
-  distributions of this run, `SHA256SUMS`, build attestations, and the matching
-  `CHANGELOG.md` section as notes. Publishing creates the tag `vVERSION`.
+  `chore(release): `, and fails unless that VERSION matches `dist`'s. It publishes the
+  `dist` artifact unchanged (the GHC `RELEASE_GHC` (9.12.2) archives, the sdists, the docs
+  tarballs and `SHA256SUMS`) as an immutable GitHub release, with build attestations and
+  the matching `CHANGELOG.md` section as notes. Publishing creates the tag `vVERSION`.
+- **pages** (after `release`): deploys the `docs` job's site to
+  <https://andreabedini.github.io/Cabal-syntax-json/> (environment `github-pages`).
 
 Every action is pinned to a full commit SHA with the version in a comment; Dependabot
-updates the pins.
+updates the pins in weekly grouped PRs with `ci(deps):` commits, which the `commits` job
+accepts.
 
 `cabal.project` constrains `bytestring`, `containers`, `Cabal`, `Cabal-syntax`, and
 `pretty` to `installed` (the GHC boot versions) — this is deliberate, keeping the runtime

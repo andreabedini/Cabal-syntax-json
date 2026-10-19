@@ -75,15 +75,35 @@ The maintainer makes releases.
 
 1. Make sure that `main` is green.
 2. Run `mise run release-pr`. It reads the commits since the last release tag, sets the next version in `Cabal-syntax-json.cabal`, regenerates `CHANGELOG.md` with [git-cliff](https://git-cliff.org/), and opens a pull request titled `chore(release): VERSION`. If there are no releasable commits, it says so and does nothing.
-3. Review the pull request. Edit `CHANGELOG.md` if necessary. To increment `A`, change the version by hand in the `.cabal` file, and change the `CHANGELOG.md` header and the commit description to the same version.
+3. Review the pull request. To increment `A`, change the version by hand in the `.cabal` file, and change the `CHANGELOG.md` header and the commit description to the same version. Edits to `CHANGELOG.md` are lost at the next release, which regenerates it; wording that must stay goes in `cliff.toml`.
 4. When `ci-ok` passes, merge the pull request with rebase merge.
-5. CI's `release` job sees the release commit on `main`. It publishes a GitHub release with the archives that CI built and tested, the source distribution (`cabal sdist`) of every package in `cabal.project`, their `SHA256SUMS`, and the notes from `CHANGELOG.md`. Publishing creates the tag.
+5. CI's `release` job sees the release commit on `main`. It publishes a GitHub release with the archives that CI built and tested, the source distribution (`cabal sdist`) of every package in `cabal.project`, the Haddock documentation of every package with a library in the format Hackage takes, their `SHA256SUMS`, and the notes from `CHANGELOG.md`. Publishing creates the tag. Then the `pages` job publishes the documentation of the release to <https://andreabedini.github.io/Cabal-syntax-json/>.
 6. Verify the release:
 
    ```
    gh release verify vVERSION
-   gh attestation verify ARCHIVE --repo andreabedini/Cabal-syntax-json
+   gh attestation verify ASSET --repo andreabedini/Cabal-syntax-json
    ```
 
+To publish a release on Hackage too, upload its source distribution and its documentation, which were built by CI, from the GitHub release:
+
+```
+gh release download vVERSION --repo andreabedini/Cabal-syntax-json --pattern 'Cabal-syntax-json-VERSION*.tar.gz'
+cabal upload --publish Cabal-syntax-json-VERSION.tar.gz
+cabal upload --publish --documentation Cabal-syntax-json-VERSION-docs.tar.gz
+```
+
 Releases are immutable: a published version cannot change. If a release is wrong, fix it and make a new release. If the `release` job fails before it publishes, rerun the failed jobs; the job continues the draft release.
+
+### Release artifacts without a release
+
+Every CI run, on a pull request or started by hand, uploads everything that a release would publish as one artifact, `dist`: the same files and `SHA256SUMS`, without attestations. To get them for any branch without releasing:
+
+```
+gh workflow run ci.yml --ref BRANCH
+gh run list --workflow ci.yml --branch BRANCH --event workflow_dispatch --limit 1
+gh run download RUN_ID --name dist
+```
+
+The `release` job runs only on a push to `main`, so a manual run never releases. The `github-pages` artifact of a run is the documentation site, as a tar file.
 
