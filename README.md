@@ -381,8 +381,9 @@ open (here none, so the block is gone):
 
 ## How it works
 
-The JSON representation is built by a pipeline of stages (the per-component core lives in
-`Cabal.Syntax.Pipeline`):
+The JSON representation is built in five steps. Steps 3 and 4 are the core of the
+transformation: the Haddock documentation of `Cabal.Syntax.Pipeline` follows a field
+through them in detail, as stages 0 to 4.
 
 1. **Parse** the cabal file with `readGenericPackageDescription`.
 2. **Simplify** the conditionals against the CLI assignment (flags, OS, arch, compiler).
@@ -420,16 +421,17 @@ The JSON representation is built by a pipeline of stages (the per-component core
          if flag(vendor-filepath)
            ./vendored-filepath
            .
+         if !flag(vendor-filepath)
+           .
        default-extensions:
          if flag(vendor-filepath)
            ImplicitPrelude
        build-depends:
          if !flag(vendor-filepath)
            filepath
-       hs-source-dirs:
-         if !flag(vendor-filepath)
-           .
    ```
+
+   Each field appears once, with the values of every branch that sets it.
 
 4. **Flatten** each field's tree into a list whose values are guarded by their *cumulative*
    condition. Nested conditions collapse into a single conjunction:

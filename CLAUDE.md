@@ -89,10 +89,10 @@ its goldens the same way.
 
 ## Architecture
 
-The transformation runs as a pipeline; `app/Main.hs` (`main'`) wires the stages together
-and is the best entry point for understanding the whole flow. The per-component
-transformation (stages 0–4 below) lives in `Cabal.Syntax.Pipeline`, which names each
-intermediate representation. Stages:
+The transformation runs in five steps; `app/Main.hs` (`main'`) wires them together and is
+the best entry point for understanding the whole flow. Steps 3 and 4 produce, for each
+component, the five representations that `Cabal.Syntax.Pipeline` names as *stages* 0–4:
+step 3 yields stage 0, and step 4 goes from stage 0 to stage 4. Steps:
 
 1. **Parse** — `readGenericPackageDescription` (via `Cabal.Syntax.Compat`) yields a
    `GenericPackageDescription`.
@@ -103,14 +103,16 @@ intermediate representation. Stages:
    `runGenericPackageDescription` walks the package using `Cabal`'s `FieldGrammar`
    machinery, but with our `JSONFieldGrammar` interpretation, producing
    `GPD (FieldMap a) (ComponentMap b)` where each field value is a `Fragment Json`.
-4. **Restructure conditionals** (`Cabal.Syntax.CondTree`), only when not `--pristine`.
-   `process`/`processComponent` in `Cabal.Syntax.Pipeline` chains four sub-steps over each
-   component's cond tree: `convertCondTree` → `pushConditionals` (push conditions down into
-   field values: tree-of-fields becomes fields-of-trees) → `flattenCondTree` (flatten to a
-   list of `Guarded` values, each carrying its cumulative `Condition`) → `defragment` (merge
-   the guarded fragments back into a single `Fragment Json` per field). The module also names
-   the five intermediate representations as stage-type aliases (`ComponentTreeCabal`,
-   `ComponentTree`, `FieldTrees`, `GuardedFields`, `JsonFields`).
+4. **Restructure conditionals** (functions in `Cabal.Syntax.CondTree`), only when not
+   `--pristine`. `process`/`processComponent` in `Cabal.Syntax.Pipeline` chains four
+   sub-steps over each component's cond tree: `convertCondTree` → `pushConditionals` (push
+   conditions down into field values: tree-of-fields becomes fields-of-trees) →
+   `flattenCondTree` (flatten to a list of `Guarded` values, each carrying its cumulative
+   `Condition`) → `defragment` (merge the guarded fragments back into a single
+   `Fragment Json` per field). `Cabal.Syntax.Pipeline` names the representations as
+   stage-type aliases: stage 0 `ComponentTreeCabal` (what `--pristine` renders), 1
+   `ComponentTree`, 2 `FieldTrees`, 3 `GuardedFields` and 4 `JsonFields` (what the default
+   output renders).
 5. **Render** — `formatJson` (default) via the `ToJSON` class in `Cabal.Syntax.Json`, or
    `formatPretty` (`--debug`) via the `PrettyFieldClass` in `Cabal.Syntax.Pretty`, which
    emits a cabal-like intermediate format useful for debugging.
