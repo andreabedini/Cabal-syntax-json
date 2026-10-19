@@ -141,9 +141,10 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         :: FieldName
         -> ALens' s [(String, String)]
         -> JSONFieldGrammar s [(String, String)]
-    prefixedFields fnPfx l = JsonFG $ \_ kv ->
+    -- Cabal stores each field with its full name, prefix included.
+    prefixedFields _fnPfx l = JsonFG $ \_ kv ->
         foldMap
-            (\(fn, s) -> [scalarFragment' (fromUTF8BS fnPfx ++ fn) (JsonString s)])
+            (\(fn, s) -> [scalarFragment' fn (JsonString s)])
             (aview l kv)
 
     knownField :: FieldName -> JSONFieldGrammar s ()
