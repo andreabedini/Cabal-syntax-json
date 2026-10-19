@@ -36,8 +36,9 @@
 --   }
 -- @
 --
--- The pipeline rewrites that in five steps. Each representation below is shown limited
--- to its @exposed-modules@ content (a real component carries every other field too).
+-- The pipeline rewrites that through five stages. Each representation below is shown
+-- limited to its @exposed-modules@ content (a real component carries every other field
+-- too).
 --
 -- === Stage 0 — 'ComponentTreeCabal'
 --
@@ -125,7 +126,7 @@
 -- @
 --
 -- The default output renders stage 4; @--pristine@ renders stage 0. The README
--- \"Details\" section narrates the same steps for a reader of the JSON.
+-- section \"How it works\" narrates the same transformation for a reader of the JSON.
 module Cabal.Syntax.Pipeline
     ( -- * The five representations
       ComponentTreeCabal
