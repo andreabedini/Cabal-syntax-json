@@ -1,9 +1,13 @@
 import Data.Traversable (for)
 
+import Distribution.Compiler (CompilerFlavor (..), CompilerId (..))
 import Distribution.Pretty (prettyShow)
 import Distribution.System (OS (..))
-import Distribution.Types.Flag (PackageFlag (..), unFlagName)
+import Distribution.Types.ConfVar (ConfVar (..))
+import Distribution.Types.Flag (PackageFlag (..), mkFlagAssignment, unFlagName)
 import Distribution.Types.GenericPackageDescription
+import Distribution.Types.Version (mkVersion, nullVersion)
+import Distribution.Types.VersionRange (anyVersion, earlierVersion, orLaterVersion)
 import Distribution.Verbosity qualified as Verbosity
 
 import System.FilePath (replaceExtension, (<.>))
@@ -14,6 +18,7 @@ import Test.Tasty.HUnit
 
 import Cabal.Syntax.Compat (makeSymbolicPath, readGenericPackageDescription)
 import Cabal.Syntax.ListMap qualified as ListMap
+import Cabal.Syntax.Simplify (Env (..), applyEnv)
 import Cabal.Syntax.Utils (These (..), align)
 
 main :: IO ()
@@ -58,6 +63,7 @@ unitTests =
             []
             [("a", This 1), ("b", This 2)]
         , testFromListWith
+        , testGroup "compiler conditions" testCompiler
         ]
 
 testFromListWith :: TestTree
@@ -67,6 +73,31 @@ testFromListWith =
             "assert"
             (ListMap.fromList [("a", [1, 3]), ("b", [2 :: Int])])
             (ListMap.fromListWith (<>) [("a", [1]), ("b", [2]), ("a", [3])])
+
+-- | How a --compiler value decides an impl(...) condition: Right with its truth value,
+-- or Left when the condition stays open.
+testCompiler :: [TestTree]
+testCompiler =
+    [ check "ghc" (GHC, nullVersion) (GHC, anyVersion) (Right True)
+    , check "ghc" (GHC, nullVersion) (GHC, orLaterVersion (mkVersion [9])) open
+    , check "ghc" (GHC, nullVersion) (GHCJS, anyVersion) (Right False)
+    , check "ghc-9.12.2" (GHC, ghc9122) (GHC, orLaterVersion (mkVersion [9])) (Right True)
+    , check "ghc-9.12.2" (GHC, ghc9122) (GHC, earlierVersion (mkVersion [9])) (Right False)
+    , check "ghc-9.12.2" (GHC, ghc9122) (GHCJS, anyVersion) (Right False)
+    ]
+  where
+    ghc9122 = mkVersion [9, 12, 2]
+    open = Left ()
+    check name (comp, ver) (comp', range) expected =
+        testCase (name ++ " decides impl(" ++ prettyShow comp' ++ " " ++ prettyShow range ++ ")") $
+            assertEqual
+                "assert"
+                expected
+                ( either (const (Left ())) Right $
+                    applyEnv
+                        (Env Nothing Nothing (Just (CompilerId comp ver)) (mkFlagAssignment []))
+                        (Impl comp' range)
+                )
 
 mkTest :: FilePath -> FilePath -> FilePath -> [String] -> TestTree
 mkTest name cabalfile ext args =
