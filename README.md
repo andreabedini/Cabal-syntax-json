@@ -96,7 +96,7 @@ The arguments of the specialising options use Cabal's syntax:
 | Argument | Form | Example |
 |---|---|---|
 | `FLAG` | One or more flag assignments, separated by spaces: `+NAME` sets a flag, `-NAME` clears it. The option can be repeated. | `--flag '+pure-haskell -debug'` |
-| `COMPILER` | `FLAVOUR-VERSION` | `--compiler ghc-9.12.2` |
+| `COMPILER` | `FLAVOUR-VERSION`, or just `FLAVOUR`: that decides `impl(FLAVOUR)` and conditions on other compilers, but leaves version ranges open | `--compiler ghc-9.12.2` |
 | `OS` | An operating system as `os(...)` names it in a `.cabal` file | `--os linux` |
 | `ARCH` | An architecture as `arch(...)` names it | `--arch aarch64` |
 | `PLATFORM` | `ARCH-OS`; sets both | `--platform x86_64-linux` |

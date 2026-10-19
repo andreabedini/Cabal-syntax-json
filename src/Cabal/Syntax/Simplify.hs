@@ -17,7 +17,7 @@ import Distribution.Types.ConfVar (ConfVar (..))
 import Distribution.Types.Flag (FlagAssignment, PackageFlag (..), lookupFlagAssignment)
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Version (nullVersion)
-import Distribution.Types.VersionRange (withinRange)
+import Distribution.Types.VersionRange (isAnyVersion, withinRange)
 
 -- | Simplify every component's cond tree against the 'Env', and drop the flags the
 -- environment already fixes. Returns a 'GenericPackageDescription' with the decidable
@@ -93,8 +93,13 @@ applyEnv Env{envOS = Just os} (OS os') =
     Right (os == os')
 applyEnv Env{envArch = Just arch} (Arch arch') =
     Right (arch == arch')
-applyEnv Env{envCompiler = Just (CompilerId comp ver)} (Impl comp' ver') =
-    Right (ver /= nullVersion && ver `withinRange` ver' && comp == comp')
+-- A compiler given without a version (@--compiler ghc@) decides the flavour, and so
+-- @impl(ghc)@, but leaves a condition on its version open.
+applyEnv Env{envCompiler = Just (CompilerId comp ver)} var@(Impl comp' range)
+    | comp /= comp' = Right False
+    | ver /= nullVersion = Right (ver `withinRange` range)
+    | isAnyVersion range = Right True
+    | otherwise = Left var
 applyEnv Env{envFlags} (PackageFlag fn) =
     case lookupFlagAssignment fn envFlags of
         Nothing -> Left (PackageFlag fn)
