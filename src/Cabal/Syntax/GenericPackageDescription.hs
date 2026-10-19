@@ -100,7 +100,7 @@ instance (ToJSON a, ToJSON b) => ToJSON (GPD a b) where
     toJSON (GPD a b) =
         JsonObject $
             [(k, toJSON v) | (k, v) <- itoList a]
-            ++ [("components", toJSON b)]
+                ++ [("components", toJSON b)]
 
 instance (Pretty a, PrettyFieldClass b) => PrettyFieldClass (GPD a b) where
     prettyField (GPD a b) = prettyField a <> prettyField b
@@ -124,7 +124,7 @@ instance Pretty a => PrettyFieldClass (FieldMap a) where
 
 instance ToJSON a => ToJSON (FieldMap a) where
     toJSON (FieldMap m) =
-        JsonObject [ (n, toJSON a) | (n, a) <- itoList m ]
+        JsonObject [(n, toJSON a) | (n, a) <- itoList m]
 
 -- | An order-preserving map from 'ComponentName' to a component's representation.
 newtype ComponentMap a = ComponentMap (ListMap ComponentName a)
@@ -133,7 +133,7 @@ newtype ComponentMap a = ComponentMap (ListMap ComponentName a)
 
 instance ToJSON a => ToJSON (ComponentMap a) where
     toJSON (ComponentMap m) =
-        JsonObject [ (prettyShow n, toJSON a) | (n, a) <- itoList m ]
+        JsonObject [(prettyShow n, toJSON a) | (n, a) <- itoList m]
 
 instance PrettyFieldClass a => PrettyFieldClass (ComponentMap a) where
     prettyField (ComponentMap m) =
@@ -181,19 +181,29 @@ runGenericPackageDescription v gpd =
     components =
         ListMap.fromList $
             mconcat
-                [ [ (CLibName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (libraryFieldGrammar n)) c)
+                [ [ ( CLibName n
+                    , fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (libraryFieldGrammar n)) c
+                    )
                   | (n, c) <- libs
                   ]
-                , [ (CFLibName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (foreignLibFieldGrammar n)) c)
+                , [ ( CFLibName n
+                    , fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (foreignLibFieldGrammar n)) c
+                    )
                   | (n, c) <- condForeignLibs gpd
                   ]
-                , [ (CExeName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (executableFieldGrammar n)) c)
+                , [ ( CExeName n
+                    , fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v (executableFieldGrammar n)) c
+                    )
                   | (n, c) <- condExecutables gpd
                   ]
-                , [ (CTestName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v testSuiteFieldGrammar) c)
+                , [ ( CTestName n
+                    , fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v testSuiteFieldGrammar) c
+                    )
                   | (n, c) <- tests
                   ]
-                , [ (CBenchName n, fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v benchmarkFieldGrammar) c)
+                , [ ( CBenchName n
+                    , fmap (FieldMap . ListMap.fromListWith (<>) . jsonFieldGrammar v benchmarkFieldGrammar) c
+                    )
                   | (n, c) <- benchmarks
                   ]
                 ]

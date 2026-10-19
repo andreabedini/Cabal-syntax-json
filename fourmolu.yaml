@@ -38,7 +38,7 @@ in-style: right-align
 single-constraint-parens: never
 
 # Whether to put parentheses around a single deriving class (choices: auto, always, or never)
-single-deriving-parens: never
+single-deriving-parens: auto
 
 # Output Unicode syntax (choices: detect, always, or never)
 unicode: never
