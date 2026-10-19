@@ -124,7 +124,9 @@ deriving via ViaPretty (RelativePath from to) instance ToJSON (RelativePath from
 
 deriving via ViaPretty CompatDataDir instance ToJSON CompatDataDir
 
-deriving via ViaPretty CompatLicenseFile instance ToJSON CompatLicenseFile
+-- The list of paths, so that no file is an empty list (and the field is omitted) and
+-- several files are several elements.
+deriving via ViaUnpack CompatLicenseFile instance ToJSON CompatLicenseFile
 
 deriving via ViaPretty VersionRange instance ToJSON VersionRange
 

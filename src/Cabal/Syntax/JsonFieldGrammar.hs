@@ -158,10 +158,12 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
         -> JSONFieldGrammar s a
     deprecatedSince _v _fn fg = fg
 
+    -- A hidden field is another way to write a field that the grammar also renders
+    -- (such as license-files for license-file). Like Cabal's pretty-printer, emit nothing.
     hiddenField
         :: JSONFieldGrammar s a
         -> JSONFieldGrammar s a
-    hiddenField fg = fg
+    hiddenField _ = JsonFG $ \_ _ -> mempty
 
     removedIn
         :: CabalSpecVersion

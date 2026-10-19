@@ -1,0 +1,1 @@
+{"cabal-version":"3.0","name":"license-files","version":"0.1.0.0","license":"BSD-3-Clause","license-file":["LICENSE","NOTICE"],"components":{"lib":{"exposed-modules":["M"],"default-language":"Haskell2010","build-depends":[{"package":"base","version":">=0","libs":["base"]}]}}}
