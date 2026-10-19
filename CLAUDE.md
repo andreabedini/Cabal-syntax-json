@@ -119,8 +119,8 @@ intermediate representation. Stages:
 
 - `Cabal.Syntax.Compat` — shims over `Cabal`/`Cabal-syntax` API differences across the
   supported version range (`SymbolicPath`, `readGenericPackageDescription`, etc.). The
-  build supports Cabal `3.10 || 3.12 || 3.14`; version-specific API breakage belongs
-  here, behind CPP, not scattered through the codebase.
+  build supports Cabal `3.12 || 3.14` (GHC 9.10 and 9.12); version-specific API
+  breakage belongs here, behind CPP, not scattered through the codebase.
 - `Cabal.Syntax.JsonFieldGrammar` — the `JSONFieldGrammar` `FieldGrammar` instance and
   the `Fragment` type (a field value carrying enough structure to be re-guarded by
   conditionals). This is where cabal fields are mapped to JSON.

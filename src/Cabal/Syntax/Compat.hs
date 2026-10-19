@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Compatibility shims over the @Cabal@\/@Cabal-syntax@ API differences across the
--- supported version range (@3.10 || 3.12 || 3.14@).
+-- supported version range (@3.12 || 3.14@).
 --
 -- Path types and the @readGenericPackageDescription@ signature changed across these
 -- versions; the CPP branches below provide a uniform surface so the rest of the
@@ -23,13 +23,8 @@ module Cabal.Syntax.Compat
     , CWD
     , FileOrDir (..)
     , Pkg
-    , foldl'
     )
 where
-
-#if !MIN_VERSION_base(4, 20, 0)
-import Data.List (foldl')
-#endif
 
 #if MIN_VERSION_Cabal_syntax(3,14,0)
 import Data.String
@@ -40,7 +35,7 @@ import Distribution.PackageDescription.FieldGrammar
 {- FOURMOLU_DISABLE -}
 import Distribution.Pretty
   ( Pretty (..)
-#if !MIN_VERSION_Cabal_syntax(3,14,0) && MIN_VERSION_Cabal_syntax(3,10,0)
+#if !MIN_VERSION_Cabal_syntax(3,14,0)
   , showFilePath
 #endif
   )
@@ -49,7 +44,7 @@ import Distribution.Simple.PackageDescription
 import Distribution.Utils.Path
 import Distribution.Verbosity (Verbosity)
 {- FOURMOLU_DISABLE -}
-#if !MIN_VERSION_Cabal_syntax(3,14,0) && MIN_VERSION_Cabal_syntax(3,10,0)
+#if !MIN_VERSION_Cabal_syntax(3,14,0)
 {- FOURMOLU_ENABLE -}
 import Data.Kind (Type)
 import GHC.Stack (HasCallStack)
@@ -77,7 +72,7 @@ readGenericPackageDescription
 readGenericPackageDescription = Distribution.Simple.PackageDescription.readGenericPackageDescription
 
 {- FOURMOLU_DISABLE -}
-#elif MIN_VERSION_Cabal_syntax(3,10,0)
+#else
 {- FOURMOLU_ENABLE -}
 
 -- | A data-directory 'FilePath' newtype with the version-appropriate 'Pretty' instance.
@@ -87,7 +82,7 @@ instance Pretty CompatDataDir where
   pretty (CompatDataDir fpath) = showFilePath fpath
 
 -- | A relative-path newtype, standing in for the @SymbolicPath@ machinery absent in
--- these older Cabal versions.
+-- Cabal 3.12.
 newtype RelativePath from to = RelativePath FilePath
 
 instance Pretty (RelativePath from to) where
@@ -112,7 +107,7 @@ data Pkg
 -- | Phantom tag distinguishing a file from a directory in a 'SymbolicPath'.
 data FileOrDir = File | Dir Type
 
--- | Parse a @.cabal@ file into a 'GenericPackageDescription' (older-Cabal signature).
+-- | Parse a @.cabal@ file into a 'GenericPackageDescription' (Cabal 3.12 signature).
 readGenericPackageDescription
   :: HasCallStack
   => Verbosity
